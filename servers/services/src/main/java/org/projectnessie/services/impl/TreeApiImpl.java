@@ -26,6 +26,7 @@ import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import java.security.Principal;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -94,12 +95,24 @@ public class TreeApiImpl extends BaseApiImpl implements TreeApi {
 
   private static final int MAX_COMMIT_LOG_ENTRIES = 250;
 
+  private final Clock clock;
+
   public TreeApiImpl(
       ServerConfig config,
       VersionStore<Content, CommitMeta, Content.Type> store,
       AccessChecker accessChecker,
       Principal principal) {
+    this(config, store, accessChecker, principal, Clock.systemUTC());
+  }
+
+  public TreeApiImpl(
+      ServerConfig config,
+      VersionStore<Contents, CommitMeta, Contents.Type> store,
+      AccessChecker accessChecker,
+      Principal principal,
+      Clock clock) {
     super(config, store, accessChecker, principal);
+    this.clock = clock;
   }
 
   @Override
@@ -476,13 +489,13 @@ public class TreeApiImpl extends BaseApiImpl implements TreeApi {
     }
   }
 
-  private static CommitMeta meta(Principal principal, CommitMeta commitMeta) {
+  private CommitMeta meta(Principal principal, CommitMeta commitMeta) {
     if (commitMeta.getCommitter() != null) {
       throw new IllegalArgumentException(
           "Cannot set the committer on the client side. It is set by the server.");
     }
     String committer = principal == null ? "" : principal.getName();
-    Instant now = Instant.now();
+    Instant now = clock.instant();
     return commitMeta.toBuilder()
         .committer(committer)
         .commitTime(now)
