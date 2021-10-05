@@ -30,6 +30,7 @@ import org.projectnessie.model.MultiGetContentsRequest;
 import org.projectnessie.model.MultiGetContentsResponse;
 import org.projectnessie.services.authz.AccessChecker;
 import org.projectnessie.services.config.ServerConfig;
+import org.projectnessie.services.impl.ContentsApiImpl;
 import org.projectnessie.services.impl.ContentsApiImplWithAuthorization;
 import org.projectnessie.versioned.VersionStore;
 
@@ -63,11 +64,17 @@ public class RestContentsResource implements HttpContentsApi {
   }
 
   private ContentsApi resource() {
-    return new ContentsApiImplWithAuthorization(
-        config,
-        store,
-        accessChecker,
-        securityContext == null ? null : securityContext.getUserPrincipal());
+    return accessChecker != null
+        ? new ContentsApiImplWithAuthorization(
+            config,
+            store,
+            accessChecker,
+            securityContext == null ? null : securityContext.getUserPrincipal())
+        : new ContentsApiImpl(
+            config,
+            store,
+            null,
+            securityContext == null ? null : securityContext.getUserPrincipal());
   }
 
   @Override
