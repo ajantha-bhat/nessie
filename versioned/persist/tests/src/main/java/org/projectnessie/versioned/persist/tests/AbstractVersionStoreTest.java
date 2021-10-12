@@ -370,7 +370,7 @@ public abstract class AbstractVersionStoreTest extends AbstractITVersionStore {
     if (mode == DuplicateTableMode.STATEFUL_SAME_CONTENT_ID) {
       assertThatThrownBy(createTableOnOtherBranch)
           .isInstanceOf(ReferenceConflictException.class)
-          .hasMessage("Global-state for content-id 'content-id-equal' already exists.");
+          .hasMessageContaining("Global-state for content-id 'content-id-equal' already exists.");
       assertThat(store().getValue(branch2, key)).isNull();
     } else {
       createTableOnOtherBranch.call();

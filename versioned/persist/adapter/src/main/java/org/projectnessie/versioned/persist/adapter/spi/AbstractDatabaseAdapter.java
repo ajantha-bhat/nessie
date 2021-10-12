@@ -158,7 +158,12 @@ public abstract class AbstractDatabaseAdapter<OP_CONTEXT, CONFIG extends Databas
     checkForModifiedKeysBetweenExpectedAndCurrentCommit(ctx, commitAttempt, branchHead, mismatches);
 
     if (!mismatches.isEmpty()) {
-      throw new ReferenceConflictException(String.join("\n", mismatches));
+      throw new ReferenceConflictException(
+          String.format(
+              "Commit against '%s' has conflicts, expected-hash: '%s': %s",
+              branchHead.asString(),
+              commitAttempt.getExpectedHead().map(Hash::asString).orElse("<none>"),
+              String.join("\n", mismatches)));
     }
 
     CommitLogEntry currentBranchEntry = fetchFromCommitLog(ctx, branchHead);
