@@ -20,6 +20,7 @@ import com.google.common.collect.ImmutableMap;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import java.util.List;
 import java.util.Map;
+import org.projectnessie.server.TestUtil;
 import org.projectnessie.server.config.VersionStoreConfig.VersionStoreType;
 
 public class QuarkusTestProfileMongo implements QuarkusTestProfile {
@@ -27,9 +28,10 @@ public class QuarkusTestProfileMongo implements QuarkusTestProfile {
   @Override
   public Map<String, String> getConfigOverrides() {
     return ImmutableMap.<String, String>builder()
-        .put("nessie.version.store.type", VersionStoreType.MONGO.name())
-        .put("quarkus.mongodb.write-concern.journal", "false")
-        .build();
+      .putAll(TestUtil.getBasicTestConfigurations())
+      .put("nessie.version.store.type", VersionStoreType.MONGO.name())
+      .put("quarkus.mongodb.write-concern.journal", "false")
+      .build();
   }
 
   @Override
