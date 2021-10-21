@@ -18,6 +18,7 @@ package org.projectnessie.server.authz;
 import com.google.common.collect.ImmutableMap;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import java.util.Map;
+import org.projectnessie.server.TestUtil;
 import org.projectnessie.server.authn.AuthenticationEnabledProfile;
 import org.projectnessie.server.config.QuarkusNessieAuthorizationConfig;
 
@@ -31,6 +32,7 @@ public class NessieAuthorizationTestProfile implements QuarkusTestProfile {
   public Map<String, String> getConfigOverrides() {
     return ImmutableMap.<String, String>builder()
         .putAll(AuthenticationEnabledProfile.CONFIG_OVERRIDES)
+        .putAll(TestUtil.getAuthzTestConfigurations())
         .put("nessie.server.authorization.enabled", "true")
         .build();
   }
