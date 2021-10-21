@@ -30,3 +30,13 @@ curl 'http://localhost:19120/api/v1/trees' --oauth2-bearer "$NESSIE_TOKEN" -v
 ```shell
 nessie --auth-token "$NESSIE_TOKEN" remote show
 ```
+
+
+## Convenience settings for running manual testing scenarios with a local authentication server 
+Add below configurations to `application.properties`
+
+```
+%auth-test.nessie.server.authentication.enabled=true
+%auth-test.quarkus.oidc.auth-server-url=http://localhost:8080/auth/realms/master
+%auth-test.quarkus.oidc.client-id=projectnessie
+```

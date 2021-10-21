@@ -15,15 +15,16 @@
  */
 package org.projectnessie.server.authn;
 
-import com.google.common.collect.ImmutableMap;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import java.util.Map;
+import org.projectnessie.server.profiles.BaseConfigurationProvider;
 
 /** A simple {@link QuarkusTestProfile} that disabled Nessie authentication. */
-public class AuthenticationDisabledProfile implements QuarkusTestProfile {
+public class AuthenticationDisabledProfile extends BaseConfigurationProvider
+    implements QuarkusTestProfile {
 
   public static final Map<String, String> CONFIG_OVERRIDES =
-      ImmutableMap.of("nessie.server.authentication.enabled", "false");
+      basicTestConfigurations().put("nessie.server.authentication.enabled", "false").build();
 
   @Override
   public Map<String, String> getConfigOverrides() {
