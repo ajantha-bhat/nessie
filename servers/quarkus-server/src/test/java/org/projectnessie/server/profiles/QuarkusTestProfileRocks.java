@@ -24,6 +24,10 @@ public class QuarkusTestProfileRocks implements QuarkusTestProfile {
 
   @Override
   public Map<String, String> getConfigOverrides() {
-    return ImmutableMap.of("nessie.version.store.type", VersionStoreType.ROCKS.name());
+    return ImmutableMap.<String, String>builder()
+        .putAll(BaseConfigProfile.CONFIG_OVERRIDES)
+        .putAll(BaseConfigProfile.VERSION_STORE_CONFIG_OVERRIDES)
+        .put("nessie.version.store.type", VersionStoreType.ROCKS.name())
+        .build();
   }
 }

@@ -18,16 +18,32 @@ package org.projectnessie.server.profiles;
 import com.google.common.collect.ImmutableMap;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import java.util.Map;
-import org.projectnessie.server.config.VersionStoreConfig.VersionStoreType;
 
-public class QuarkusTestProfileInmemory implements QuarkusTestProfile {
+public class BaseConfigProfile implements QuarkusTestProfile {
+
+  public static final Map<String, String> CONFIG_OVERRIDES =
+      ImmutableMap.of(
+          "quarkus.jaeger.sampler-type",
+          "const",
+          "quarkus.test.native-image-profile",
+          "test",
+          "quarkus.http.auth.basic",
+          "true");
+
+  public static final Map<String, String> VERSION_STORE_CONFIG_OVERRIDES =
+      ImmutableMap.of(
+          "nessie.version.store.advanced.key-prefix",
+          "nessie-test",
+          "nessie.version.store.advanced.commit-retries",
+          "42",
+          "nessie.version.store.advanced.tx.batch-size",
+          "41");
 
   @Override
   public Map<String, String> getConfigOverrides() {
     return ImmutableMap.<String, String>builder()
-        .putAll(BaseConfigProfile.CONFIG_OVERRIDES)
-        .putAll(BaseConfigProfile.VERSION_STORE_CONFIG_OVERRIDES)
-        .put("nessie.version.store.type", VersionStoreType.INMEMORY.name())
+        .putAll(CONFIG_OVERRIDES)
+        .putAll(VERSION_STORE_CONFIG_OVERRIDES)
         .build();
   }
 }
