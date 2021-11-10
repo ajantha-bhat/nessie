@@ -20,16 +20,16 @@ import java.util.Set;
 
 final class ContentAndMetadataPointers {
 
-  final String contentsId;
+  final String contentId;
   final Set<String> liveMetadataPointers;
   final Map<String, String> referencesWithHashToKey;
   Set<Long> liveSnapshotIds;
 
   ContentAndMetadataPointers(
-      String contentsId,
+      String contentId,
       Set<String> liveMetadataPointers,
       Map<String, String> referencesWithHashToKey) {
-    this.contentsId = contentsId;
+    this.contentId = contentId;
     this.liveMetadataPointers = liveMetadataPointers;
     this.referencesWithHashToKey = referencesWithHashToKey;
   }

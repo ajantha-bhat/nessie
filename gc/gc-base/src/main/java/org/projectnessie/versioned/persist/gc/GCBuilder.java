@@ -22,7 +22,7 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import org.projectnessie.client.api.NessieApiV1;
-import org.projectnessie.model.Contents;
+import org.projectnessie.model.Content;
 import org.projectnessie.model.Reference;
 
 final class GCBuilder implements GC.Builder {
@@ -30,7 +30,7 @@ final class GCBuilder implements GC.Builder {
   private NessieApiV1 api;
   private Instant defaultLiveAfterValue;
   private final List<Function<Reference, Instant>> liveAfterComputations = new ArrayList<>();
-  private Predicate<Contents.Type> contentTypeInclusionPredicate;
+  private Predicate<Content.Type> contentTypeInclusionPredicate;
   private Instant readUntilCommitTimestamp;
 
   @Override
@@ -53,7 +53,7 @@ final class GCBuilder implements GC.Builder {
 
   @Override
   public GC.Builder withContentTypeInclusionPredicate(
-      Predicate<Contents.Type> contentTypeInclusionPredicate) {
+      Predicate<Content.Type> contentTypeInclusionPredicate) {
     this.contentTypeInclusionPredicate = contentTypeInclusionPredicate;
     return this;
   }
@@ -66,7 +66,7 @@ final class GCBuilder implements GC.Builder {
 
   @Override
   public GC build() {
-    Predicate<Contents.Type> contentTypeInclusion =
+    Predicate<Content.Type> contentTypeInclusion =
         Objects.requireNonNull(
             contentTypeInclusionPredicate, "contentTypeInclusionPredicate must be present");
 

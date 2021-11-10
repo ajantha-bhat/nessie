@@ -30,9 +30,9 @@ import org.projectnessie.client.api.NessieApiV1;
 import org.projectnessie.error.NessieNotFoundException;
 import org.projectnessie.model.Branch;
 import org.projectnessie.model.CommitMeta;
-import org.projectnessie.model.Contents;
-import org.projectnessie.model.Contents.Type;
-import org.projectnessie.model.ContentsKey;
+import org.projectnessie.model.Content;
+import org.projectnessie.model.Content.Type;
+import org.projectnessie.model.ContentKey;
 import org.projectnessie.model.EntriesResponse;
 import org.projectnessie.model.Reference;
 import org.projectnessie.model.Tag;
@@ -40,7 +40,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Encapsulates the logic to retrieve all contents incl their content keys over all live commits in
+ * Encapsulates the logic to retrieve all content incl their content keys over all live commits in
  * all named-references.
  */
 final class GCImpl implements GC {
@@ -64,29 +64,29 @@ final class GCImpl implements GC {
   }
 
   @Override
-  public <GC_CONTENTS_VALUES extends ContentsValues> GCResult<GC_CONTENTS_VALUES> performGC(
-      ContentsValuesCollector<GC_CONTENTS_VALUES> contentsValuesCollector) {
-    List<Reference> references = api.getAllReferences().get();
+  public <GC_CONTENT_VALUES extends ContentValues> GCResult<GC_CONTENT_VALUES> performGC(
+      ContentValuesCollector<GC_CONTENT_VALUES> contentValuesCollector) {
+    List<Reference> references = api.getAllReferences().get().getReferences();
 
     for (Reference reference : references) {
       Instant cutOffTimestamp = this.cutOffTimestamp.apply(reference);
       walkReference(
-          contentsValuesCollector,
+          contentValuesCollector,
           reference,
           commitMeta -> cutOffTimestamp.compareTo(commitMeta.getCommitTime()) < 0);
     }
 
-    return new GCResult<>(contentsValuesCollector.contentsValues);
+    return new GCResult<>(contentValuesCollector.contentValues);
   }
 
-  private <GC_CONTENTS_VALUES extends ContentsValues> void walkReference(
-      ContentsValuesCollector<GC_CONTENTS_VALUES> contentsValuesCollector,
+  private <GC_CONTENT_VALUES extends ContentValues> void walkReference(
+      ContentValuesCollector<GC_CONTENT_VALUES> contentValuesCollector,
       Reference reference,
       Predicate<CommitMeta> liveCommitPredicate) {
     Consumer<CommitMeta> perCommit =
         commitMeta ->
             handleCommit(
-                contentsValuesCollector,
+                contentValuesCollector,
                 reference,
                 commitMeta,
                 liveCommitPredicate.test(commitMeta));
@@ -135,8 +135,8 @@ final class GCImpl implements GC {
     }
   }
 
-  private <GC_CONTENTS_VALUES extends ContentsValues> void handleCommit(
-      ContentsValuesCollector<GC_CONTENTS_VALUES> contentsValuesCollector,
+  private <GC_CONTENT_VALUES extends ContentValues> void handleCommit(
+      ContentValuesCollector<GC_CONTENT_VALUES> contentValuesCollector,
       Reference reference,
       CommitMeta commitMeta,
       boolean isLive) {
@@ -147,40 +147,40 @@ final class GCImpl implements GC {
       //  and this method first retrieves all keys on that commit and then retrieves all values
       //  on the same commit. However, it is good enough for a first iteration of the Nessie GC.
 
-      List<ContentsKey> allKeys =
+      List<ContentKey> allKeys =
           api.getEntries().reference(commitReference).get().getEntries().stream()
               .filter(contentTypeInclusionPredicate)
               .map(EntriesResponse.Entry::getName)
               .collect(Collectors.toList());
-      api.getContents()
+      api.getContent()
           .reference(commitReference)
           .keys(allKeys)
           .get()
           .forEach(
-              (contentsKey, contents) ->
+              (contentKey, content) ->
                   handleValue(
-                      contentsValuesCollector, commitReference, contentsKey, contents, isLive));
+                      contentValuesCollector, commitReference, contentKey, content, isLive));
     } catch (NessieNotFoundException e) {
       throw new RuntimeException(e);
     }
   }
 
-  private <GC_CONTENTS_VALUES extends ContentsValues> void handleValue(
-      ContentsValuesCollector<GC_CONTENTS_VALUES> contentsValuesCollector,
+  private <GC_CONTENT_VALUES extends ContentValues> void handleValue(
+      ContentValuesCollector<GC_CONTENT_VALUES> contentValuesCollector,
       Reference reference,
-      ContentsKey contentsKey,
-      Contents contents,
+      ContentKey contentKey,
+      Content content,
       boolean isLive) {
     // TODO reduce to TRACE or remove log at all
     LOGGER.info(
-        "{} value contents-id {} at commit {} in {} with key {}: {}",
+        "{} value content-id {} at commit {} in {} with key {}: {}",
         isLive ? "Live" : "Non-live",
-        contents.getId(),
+        content.getId(),
         reference.getHash(),
         reference.getName(),
-        contentsKey,
-        contents);
-    contentsValuesCollector.gotValue(contents, reference, contentsKey, isLive);
+        contentKey,
+        content);
+    contentValuesCollector.gotValue(content, reference, contentKey, isLive);
   }
 
   private Reference referenceWithHash(Reference reference, CommitMeta commitMeta) {

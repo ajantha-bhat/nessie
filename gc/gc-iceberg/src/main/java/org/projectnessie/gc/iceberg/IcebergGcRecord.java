@@ -32,7 +32,7 @@ public interface IcebergGcRecord {
   String getGcRunId();
 
   @Nullable
-  String getContentsId();
+  String getContentId();
 
   @Nullable
   List<String> getLiveMetadataPointers();

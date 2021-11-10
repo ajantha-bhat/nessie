@@ -37,7 +37,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.MockedStatic;
 import org.mockito.stubbing.OngoingStubbing;
 import org.projectnessie.api.http.HttpConfigApi;
-import org.projectnessie.api.http.HttpContentsApi;
+import org.projectnessie.api.http.HttpContentApi;
 import org.projectnessie.api.http.HttpTreeApi;
 import org.projectnessie.client.http.HttpClientBuilder;
 import org.projectnessie.client.http.NessieApiClient;
@@ -46,12 +46,12 @@ import org.projectnessie.error.NessieConflictException;
 import org.projectnessie.error.NessieNotFoundException;
 import org.projectnessie.model.Branch;
 import org.projectnessie.model.CommitMeta;
-import org.projectnessie.model.Contents;
-import org.projectnessie.model.Contents.Type;
+import org.projectnessie.model.Content;
+import org.projectnessie.model.Content.Type;
 import org.projectnessie.server.store.TableCommitMetaStoreWorker;
 import org.projectnessie.services.config.ServerConfig;
 import org.projectnessie.services.rest.RestConfigResource;
-import org.projectnessie.services.rest.RestContentsResource;
+import org.projectnessie.services.rest.RestContentResource;
 import org.projectnessie.services.rest.RestTreeResource;
 import org.projectnessie.versioned.persist.adapter.DatabaseAdapter;
 import org.projectnessie.versioned.persist.store.PersistVersionStore;
@@ -323,7 +323,7 @@ abstract class AbstractIcebergGc {
   @ParameterizedTest
   @MethodSource("icebergGcScenarios")
   void icebergGcTest(IcebergGcScenario test) {
-    PersistVersionStore<Contents, CommitMeta, Type> versionStore =
+    PersistVersionStore<Content, CommitMeta, Type> versionStore =
         new PersistVersionStore<>(databaseAdapter, STORE_WORKER);
     ServerConfig serverConfig =
         new ServerConfig() {
@@ -339,9 +339,9 @@ abstract class AbstractIcebergGc {
         };
 
     HttpTreeApi treeApi = new RestTreeResource(serverConfig, versionStore, null, TEST_CLOCK);
-    HttpContentsApi contentsApi = new RestContentsResource(serverConfig, versionStore, null);
+    HttpContentApi contentApi = new RestContentResource(serverConfig, versionStore, null);
     HttpConfigApi configApi = new RestConfigResource(serverConfig);
-    HttpApiV1 api = new HttpApiV1(new NessieApiClient(configApi, treeApi, contentsApi));
+    HttpApiV1 api = new HttpApiV1(new NessieApiClient(configApi, treeApi, contentApi));
 
     try {
       api.createReference()

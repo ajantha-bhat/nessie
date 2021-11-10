@@ -34,7 +34,7 @@ final class IcebergGcRepo implements AutoCloseable {
   static final String COL_TYPE = "type";
   static final String COL_GC_RUN_ID = "gcRunId";
   static final String COL_GC_RUN_START = "gcRunStart";
-  static final String COL_CONTENTS_ID = "contentsId";
+  static final String COL_CONTENT_ID = "contentId";
   static final String COL_LIVE_METADATA_POINTERS = "liveMetadataPointers";
   static final String COL_REFERENCES_TO_KEYS = "referencesToKeys";
 
@@ -53,8 +53,8 @@ final class IcebergGcRepo implements AutoCloseable {
           + COL_GC_RUN_ID
           + " string COMMENT 'GC run-ID',\n"
           + "  "
-          + COL_CONTENTS_ID
-          + " string COMMENT 'Nessie Contents.id',\n"
+          + COL_CONTENT_ID
+          + " string COMMENT 'Nessie Content.id',\n"
           + "  "
           + COL_LIVE_METADATA_POINTERS
           + " array<string> COMMENT 'Iceberg live metadata pointers, can be empty',\n"
@@ -125,7 +125,7 @@ final class IcebergGcRepo implements AutoCloseable {
             record.getRowType(),
             record.getGcRunStart(),
             record.getGcRunId(),
-            record.getContentsId(),
+            record.getContentId(),
             record.getLiveMetadataPointers(),
             record.getReferencesWithHashToKeys());
       default:
@@ -147,7 +147,7 @@ final class IcebergGcRepo implements AutoCloseable {
       case TYPE_GC_MARKER:
         break;
       case TYPE_CONTENT:
-        b.contentsId(row.getString(3))
+        b.contentId(row.getString(3))
             .liveMetadataPointers(row.getList(4))
             .referencesWithHashToKeys(row.getJavaMap(5));
         break;
@@ -175,7 +175,7 @@ final class IcebergGcRepo implements AutoCloseable {
     String liveSnapshotIdsQuery =
         String.format(
             "SELECT DISTINCT %s FROM %s WHERE %s IN (%s) AND %s = '%s'",
-            COL_CONTENTS_ID,
+            COL_CONTENT_ID,
             catalogAndTable,
             COL_GC_RUN_ID,
             mostRecentRunIds,
@@ -188,17 +188,17 @@ final class IcebergGcRepo implements AutoCloseable {
                 + "FROM %s details, (%s) snapshots \n"
                 + "WHERE details.%s = snapshots.%s \n"
                 + "ORDER BY details.%s",
-            COL_CONTENTS_ID,
+            COL_CONTENT_ID,
             COL_LIVE_METADATA_POINTERS,
             COL_REFERENCES_TO_KEYS,
             //
             catalogAndTable,
             liveSnapshotIdsQuery,
             //
-            COL_CONTENTS_ID,
-            COL_CONTENTS_ID,
+            COL_CONTENT_ID,
+            COL_CONTENT_ID,
             //
-            COL_CONTENTS_ID);
+            COL_CONTENT_ID);
 
     return sparkSession.sql(liveSnapshotDetails);
   }

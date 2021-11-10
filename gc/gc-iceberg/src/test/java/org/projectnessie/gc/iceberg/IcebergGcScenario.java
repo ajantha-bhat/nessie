@@ -59,8 +59,8 @@ import org.projectnessie.client.api.NessieApiV1;
 import org.projectnessie.error.NessieConflictException;
 import org.projectnessie.error.NessieNotFoundException;
 import org.projectnessie.model.Branch;
-import org.projectnessie.model.Contents;
-import org.projectnessie.model.ContentsKey;
+import org.projectnessie.model.Content;
+import org.projectnessie.model.ContentKey;
 import org.projectnessie.model.IcebergTable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -99,7 +99,7 @@ final class IcebergGcScenario {
           "References for '{}' before '{}':{}",
           op.desc,
           op.callSite.getStackTrace()[0],
-          api.getAllReferences().get().stream()
+          api.getAllReferences().get().getReferences().stream()
               .map(r -> String.format("Reference at '%s' @ '%s'", r.getHash(), r.getName()))
               .collect(Collectors.joining("\n        ", "\n        ", "")));
 
@@ -113,7 +113,7 @@ final class IcebergGcScenario {
             "References for '{}' after '{}':{}",
             op.desc,
             op.callSite.getStackTrace()[0],
-            api.getAllReferences().get().stream()
+            api.getAllReferences().get().getReferences().stream()
                 .map(r -> String.format("Reference at '%s' @ '%s'", r.getHash(), r.getName()))
                 .collect(Collectors.joining("\n        ", "\n        ", "")));
       }
@@ -169,11 +169,11 @@ final class IcebergGcScenario {
 
           IcebergTable icebergTable;
           try {
-            ContentsKey key = toKey(tableName);
-            Map<ContentsKey, Contents> contents =
-                api.getContents().refName(referenceName).key(key).get();
+            ContentKey key = toKey(tableName);
+            Map<ContentKey, Content> content =
+                api.getContent().refName(referenceName).key(key).get();
             Optional<IcebergTable> tableOpt =
-                Optional.ofNullable(contents.get(key)).flatMap(c -> c.unwrap(IcebergTable.class));
+                Optional.ofNullable(content.get(key)).flatMap(c -> c.unwrap(IcebergTable.class));
             assertThat(tableOpt)
                 .describedAs("Table '%s' not found in %s", key, referenceName)
                 .isPresent();
@@ -302,7 +302,7 @@ final class IcebergGcScenario {
             .collectAsList();
 
     LOGGER.info(
-        "Result of expire-procedure:{}",
+        "Result of identify-procedure:{}",
         gcResultRows.stream()
             .map(Row::toString)
             .collect(Collectors.joining("\n        ", "\n        ", "")));
@@ -315,7 +315,7 @@ final class IcebergGcScenario {
         markerRow = record;
       } else {
         gcRowsByContentId
-            .computeIfAbsent(record.getContentsId(), x -> new ArrayList<>())
+            .computeIfAbsent(record.getContentId(), x -> new ArrayList<>())
             .add(record);
       }
     }

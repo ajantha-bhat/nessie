@@ -17,29 +17,29 @@ package org.projectnessie.versioned.persist.gc;
 
 import java.util.HashMap;
 import java.util.Map;
-import org.projectnessie.model.Contents;
-import org.projectnessie.model.ContentsKey;
+import org.projectnessie.model.Content;
+import org.projectnessie.model.ContentKey;
 import org.projectnessie.model.Reference;
 
 /**
- * Contains details about one contents objects: the contents-type, the live values and the non-live
+ * Contains details about one content objects: the content-type, the live values and the non-live
  * values.
  */
-public abstract class ContentsValues {
+public abstract class ContentValues {
 
-  /** A reference via which this contents object (table) is reachable. */
+  /** A reference via which this content object (table) is reachable. */
   private final Map<String, KeyAndHash> referencesToKeyAndHash = new HashMap<>();
 
   public Map<String, KeyAndHash> getReferencesToKeyAndHash() {
     return referencesToKeyAndHash;
   }
 
-  private void setLiveAtIfAbsent(Reference reference, ContentsKey key) {
+  private void setLiveAtIfAbsent(Reference reference, ContentKey key) {
     referencesToKeyAndHash.putIfAbsent(
         reference.getName(), KeyAndHash.of(key, reference.getHash()));
   }
 
-  void gotValue(Contents content, Reference reference, ContentsKey key, boolean isLive) {
+  void gotValue(Content content, Reference reference, ContentKey key, boolean isLive) {
     synchronized (this) {
       // Remove potentially recorded non-live values. E.g. renaming a table writes both a put+delete
       // operation.
@@ -49,10 +49,10 @@ public abstract class ContentsValues {
     }
   }
 
-  protected abstract void addValue(Contents contents, boolean isLive);
+  protected abstract void addValue(Content content, boolean isLive);
 
   @Override
   public String toString() {
-    return "ContentsValues{" + ", liveViaKeyInReferences=" + referencesToKeyAndHash + '}';
+    return "ContentValues{" + ", liveViaKeyInReferences=" + referencesToKeyAndHash + '}';
   }
 }

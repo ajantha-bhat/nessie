@@ -19,7 +19,7 @@ import java.time.Instant;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import org.projectnessie.client.api.NessieApiV1;
-import org.projectnessie.model.Contents;
+import org.projectnessie.model.Content;
 import org.projectnessie.model.Reference;
 
 public interface GC {
@@ -27,8 +27,8 @@ public interface GC {
     return new GCBuilder();
   }
 
-  <GC_CONTENTS_VALUES extends ContentsValues> GCResult<GC_CONTENTS_VALUES> performGC(
-      ContentsValuesCollector<GC_CONTENTS_VALUES> contentsValuesCollector);
+  <GC_CONTENT_VALUES extends ContentValues> GCResult<GC_CONTENT_VALUES> performGC(
+      ContentValuesCollector<GC_CONTENT_VALUES> contentValuesCollector);
 
   interface Builder {
     Builder withApi(NessieApiV1 api);
@@ -60,7 +60,7 @@ public interface GC {
      * <p>GC works for all content-types by default.
      */
     Builder withContentTypeInclusionPredicate(
-        Predicate<Contents.Type> contentTypeInclusionPredicate);
+        Predicate<Content.Type> contentTypeInclusionPredicate);
 
     /**
      * Consider all commits on all references that have a commit-timestamp newer than the given
@@ -69,8 +69,8 @@ public interface GC {
      * <p>Callers should set this to a value that is somewhat "older" than the last "identify
      * garbage" (GC) run.
      *
-     * <p>Consecutive "identify garbage" (GC) runs shall not only identify live contents but also
-     * contents that became no longer accessible.
+     * <p>Consecutive "identify garbage" (GC) runs shall not only identify live content but also
+     * content that became no longer accessible.
      */
     Builder withReadUntilCommitTimestamp(Instant readUntilCommitTimestamp);
 

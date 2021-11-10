@@ -16,16 +16,16 @@
 package org.projectnessie.versioned.persist.gc;
 
 import org.immutables.value.Value;
-import org.projectnessie.model.ContentsKey;
+import org.projectnessie.model.ContentKey;
 
 @Value.Immutable
 @Value.Style(jdkOnly = true)
 public interface KeyAndHash {
-  ContentsKey getKey();
+  ContentKey getKey();
 
   String getHash();
 
-  static KeyAndHash of(ContentsKey key, String hash) {
+  static KeyAndHash of(ContentKey key, String hash) {
     return ImmutableKeyAndHash.builder().key(key).hash(hash).build();
   }
 }

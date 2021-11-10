@@ -35,17 +35,17 @@ import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
-import org.projectnessie.model.Contents;
-import org.projectnessie.model.ContentsKey;
-import org.projectnessie.versioned.persist.gc.ContentsValuesCollector;
+import org.projectnessie.model.Content;
+import org.projectnessie.model.ContentKey;
+import org.projectnessie.versioned.persist.gc.ContentValuesCollector;
 import org.projectnessie.versioned.persist.gc.GC;
 import org.projectnessie.versioned.persist.gc.GCResult;
-import org.projectnessie.versioned.persist.gc.IcebergContentsValues;
+import org.projectnessie.versioned.persist.gc.IcebergContentValues;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Nessie GC procedure to identify the live snapshots and contents via the {@link GC Base-GC
+ * Nessie GC procedure to identify the live snapshots and content via the {@link GC Base-GC
  * functionality}, writes via {@link IcebergGcRepo}.
  */
 public class IdentifyLiveSnapshotsProcedure extends AbstractGcProcedure {
@@ -138,7 +138,7 @@ public class IdentifyLiveSnapshotsProcedure extends AbstractGcProcedure {
       GC gc =
           GC.builder()
               .withApi(nessieCatalog.getApi())
-              .withContentTypeInclusionPredicate(c -> c == Contents.Type.ICEBERG_TABLE)
+              .withContentTypeInclusionPredicate(c -> c == Content.Type.ICEBERG_TABLE)
               .withDefaultLiveAfterValue(cutOffTimestampSecondsSinceEpoch)
               .withReadUntilCommitTimestamp(
                   Instant.ofEpochSecond(
@@ -158,24 +158,24 @@ public class IdentifyLiveSnapshotsProcedure extends AbstractGcProcedure {
   private InternalRow performGarbageIdentification(String runId, Timestamp started, GC gc) {
     LOGGER.info("GC run {}: Performing garbage identification...", runId);
 
-    GCResult<IcebergContentsValues> gcResult =
-        gc.performGC(new ContentsValuesCollector<>(IcebergContentsValues::new));
+    GCResult<IcebergContentValues> gcResult =
+        gc.performGC(new ContentValuesCollector<>(IcebergContentValues::new));
 
     LOGGER.info(
         "GC run {}: Garbage identification finished for {} tables, persisting information ...",
         runId,
-        gcResult.getContentsValues().size());
+        gcResult.getContentValues().size());
 
     try (IcebergGcRepo repo = openRepo()) {
-      for (Entry<String, IcebergContentsValues> cidAndValues :
-          gcResult.getContentsValues().entrySet()) {
+      for (Entry<String, IcebergContentValues> cidAndValues :
+          gcResult.getContentValues().entrySet()) {
         String cid = cidAndValues.getKey();
-        IcebergContentsValues collectables = cidAndValues.getValue();
+        IcebergContentValues collectables = cidAndValues.getValue();
 
         IcebergGcRecord gcRecord =
             ImmutableIcebergGcRecord.builder()
                 .rowType(IcebergGcRepo.TYPE_CONTENT)
-                .contentsId(cid)
+                .contentId(cid)
                 .liveMetadataPointers(collectables.getLiveMetadataPointers())
                 .referencesWithHashToKeys(
                     collectables.getReferencesToKeyAndHash().entrySet().stream()
@@ -200,13 +200,13 @@ public class IdentifyLiveSnapshotsProcedure extends AbstractGcProcedure {
       LOGGER.info(
           "GC run {}: Wrote information about {} tables",
           runId,
-          gcResult.getContentsValues().size());
+          gcResult.getContentValues().size());
 
       return resultRow(runId, started);
     }
   }
 
-  static TableIdentifier toIdentifier(ContentsKey key) {
+  static TableIdentifier toIdentifier(ContentKey key) {
     List<String> elements = key.getElements();
     return TableIdentifier.of(elements.toArray(new String[0]));
   }

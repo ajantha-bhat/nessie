@@ -18,28 +18,28 @@ package org.projectnessie.versioned.persist.gc;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
-import org.projectnessie.model.Contents;
-import org.projectnessie.model.ContentsKey;
+import org.projectnessie.model.Content;
+import org.projectnessie.model.ContentKey;
 import org.projectnessie.model.Reference;
 
 /** Global commit-log scanning state and result. */
-public final class ContentsValuesCollector<GC_CONTENTS_VALUES extends ContentsValues> {
+public final class ContentValuesCollector<GC_CONTENT_VALUES extends ContentValues> {
 
-  private final Supplier<GC_CONTENTS_VALUES> newContentsValues;
+  private final Supplier<GC_CONTENT_VALUES> newContentValues;
 
-  /** Contents per content-id. */
-  final Map<String, GC_CONTENTS_VALUES> contentsValues = new ConcurrentHashMap<>();
+  /** Content per content-id. */
+  final Map<String, GC_CONTENT_VALUES> contentValues = new ConcurrentHashMap<>();
 
-  public ContentsValuesCollector(Supplier<GC_CONTENTS_VALUES> newContentsValues) {
-    this.newContentsValues = newContentsValues;
+  public ContentValuesCollector(Supplier<GC_CONTENT_VALUES> newContentValues) {
+    this.newContentValues = newContentValues;
   }
 
-  public GC_CONTENTS_VALUES contentsValues(String contentsId) {
-    return contentsValues.computeIfAbsent(contentsId, k -> newContentsValues.get());
+  public GC_CONTENT_VALUES contentValues(String contentId) {
+    return contentValues.computeIfAbsent(contentId, k -> newContentValues.get());
   }
 
   public void gotValue(
-      Contents contents, Reference reference, ContentsKey contentsKey, boolean isLive) {
-    contentsValues(contents.getId()).gotValue(contents, reference, contentsKey, isLive);
+      Content content, Reference reference, ContentKey contentKey, boolean isLive) {
+    contentValues(content.getId()).gotValue(content, reference, contentKey, isLive);
   }
 }

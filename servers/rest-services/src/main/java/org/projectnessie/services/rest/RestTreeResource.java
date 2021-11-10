@@ -16,7 +16,6 @@
 package org.projectnessie.services.rest;
 
 import java.time.Clock;
-import java.util.List;
 import javax.enterprise.context.RequestScoped;
 import javax.inject.Inject;
 import javax.ws.rs.core.Context;
@@ -76,7 +75,7 @@ public class RestTreeResource implements HttpTreeApi {
 
   public RestTreeResource(
       ServerConfig config,
-      VersionStore<Contents, CommitMeta, Type> store,
+      VersionStore<Content, CommitMeta, Type> store,
       AccessChecker accessChecker,
       Clock clock) {
     this.config = config;

@@ -51,7 +51,7 @@ import org.projectnessie.error.NessieConflictException;
 import org.projectnessie.error.NessieNotFoundException;
 import org.projectnessie.model.Branch;
 import org.projectnessie.model.CommitMeta;
-import org.projectnessie.model.ContentsKey;
+import org.projectnessie.model.ContentKey;
 import org.projectnessie.model.IcebergTable;
 import org.projectnessie.model.Operation;
 import org.projectnessie.model.Reference;
@@ -199,25 +199,25 @@ public class ExpireSnapshotsProcedure extends AbstractGcProcedure {
 
     // TODO add a guardrail to check that there are at least 'identifyRuns' GC runs
 
-    Map<String, ContentAndMetadataPointers> contents = new HashMap<>();
+    Map<String, ContentAndMetadataPointers> content = new HashMap<>();
     try (IcebergGcRepo repo = openRepo()) {
       repo.collectExpireableSnapshots(identifyRuns)
           .collectAsList()
           .forEach(
               row -> {
-                String contentsId = row.getString(0);
+                String contentId = row.getString(0);
                 List<String> liveMetadataPointers = row.getList(1);
                 Map<String, String> referencesWithHashToKey = row.getJavaMap(2);
-                contents.put(
-                    contentsId,
+                content.put(
+                    contentId,
                     new ContentAndMetadataPointers(
-                        contentsId, new HashSet<>(liveMetadataPointers), referencesWithHashToKey));
+                        contentId, new HashSet<>(liveMetadataPointers), referencesWithHashToKey));
               });
     }
 
     try (NessieCatalog nessieCatalog = createNessieGcCatalog()) {
       // TODO this can probably be parallelized
-      for (ContentAndMetadataPointers cmp : contents.values()) {
+      for (ContentAndMetadataPointers cmp : content.values()) {
         // TODO this can probably be parallelized
         cmp.liveSnapshotIds =
             cmp.liveMetadataPointers.stream()
@@ -231,7 +231,7 @@ public class ExpireSnapshotsProcedure extends AbstractGcProcedure {
 
       List<InternalRow> output = new ArrayList<>();
 
-      for (ContentAndMetadataPointers cmp : contents.values()) {
+      for (ContentAndMetadataPointers cmp : content.values()) {
         for (Entry<String, String> entry : cmp.referencesWithHashToKey.entrySet()) {
           String refNameAndHash = entry.getKey();
           int idxHash = refNameAndHash.indexOf('#');
@@ -239,7 +239,7 @@ public class ExpireSnapshotsProcedure extends AbstractGcProcedure {
           String refHash = refNameAndHash.substring(idxHash + 1);
           String tableName = entry.getValue();
           TableInformation tableInformation =
-              new TableInformation(cmp.contentsId, tableName, refName, refHash);
+              new TableInformation(cmp.contentId, tableName, refName, refHash);
           Timestamp timestamp = Timestamp.from(Instant.now());
           try {
             expireForTable(
@@ -284,7 +284,7 @@ public class ExpireSnapshotsProcedure extends AbstractGcProcedure {
     final String tableName;
     final String refName;
     final String refHash;
-    final ContentsKey key;
+    final ContentKey key;
 
     TableInformation(String contentId, String tableName, String refName, String refHash) {
       this.contentId = contentId;
@@ -430,7 +430,7 @@ public class ExpireSnapshotsProcedure extends AbstractGcProcedure {
         Optional.ofNullable(
                 nessieCatalog
                     .getApi()
-                    .getContents()
+                    .getContent()
                     .key(tableInformation.key)
                     .refName(tableInformation.refName)
                     .hashOnRef(tableInformation.refHash)
@@ -448,7 +448,7 @@ public class ExpireSnapshotsProcedure extends AbstractGcProcedure {
                   String.format("Create GC mirror table for %s", tableInformation)))
           .operation(
               Operation.Put.of(
-                  ContentsKey.of(expireTableName), icebergTable.get(), icebergTable.get()))
+                  ContentKey.of(expireTableName), icebergTable.get(), icebergTable.get()))
           .branchName(expireBranch)
           .commit();
 
@@ -482,7 +482,7 @@ public class ExpireSnapshotsProcedure extends AbstractGcProcedure {
           Optional.ofNullable(
                   nessieCatalog
                       .getApi()
-                      .getContents()
+                      .getContent()
                       .key(tableInformation.key)
                       .refName(tableInformation.refName)
                       .get()
@@ -500,7 +500,7 @@ public class ExpireSnapshotsProcedure extends AbstractGcProcedure {
     }
   }
 
-  static ContentsKey toKey(String table) {
+  static ContentKey toKey(String table) {
     TableIdentifier tableIdentifier = TableIdentifier.parse(table);
     List<String> identifiers = new ArrayList<>();
     if (tableIdentifier.hasNamespace()) {
@@ -508,6 +508,6 @@ public class ExpireSnapshotsProcedure extends AbstractGcProcedure {
     }
     identifiers.add(tableIdentifier.name());
 
-    return ContentsKey.of(identifiers);
+    return ContentKey.of(identifiers);
   }
 }

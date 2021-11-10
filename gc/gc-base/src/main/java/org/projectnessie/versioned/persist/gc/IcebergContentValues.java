@@ -17,17 +17,17 @@ package org.projectnessie.versioned.persist.gc;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
-import org.projectnessie.model.Contents;
+import org.projectnessie.model.Content;
 import org.projectnessie.model.IcebergTable;
 
-public final class IcebergContentsValues extends ContentsValues {
+public final class IcebergContentValues extends ContentValues {
 
   private final Set<String> metadataPointers = new LinkedHashSet<>();
   private final Set<String> nonLiveMetadataPointers = new LinkedHashSet<>();
 
   @Override
-  protected void addValue(Contents contents, boolean isLive) {
-    IcebergTable icebergTable = (IcebergTable) contents;
+  protected void addValue(Content content, boolean isLive) {
+    IcebergTable icebergTable = (IcebergTable) content;
     String metadataPointer = icebergTable.getMetadataLocation();
 
     if (isLive) {

@@ -36,26 +36,26 @@ import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.projectnessie.api.http.HttpContentsApi;
+import org.projectnessie.api.http.HttpContentApi;
 import org.projectnessie.api.http.HttpTreeApi;
 import org.projectnessie.client.http.NessieApiClient;
 import org.projectnessie.client.http.v1api.HttpApiV1;
 import org.projectnessie.model.CommitMeta;
-import org.projectnessie.model.Contents;
-import org.projectnessie.model.Contents.Type;
-import org.projectnessie.model.ContentsKey;
+import org.projectnessie.model.Content;
+import org.projectnessie.model.Content.Type;
+import org.projectnessie.model.ContentKey;
 import org.projectnessie.model.IcebergTable;
 import org.projectnessie.model.ImmutableCommitMeta;
 import org.projectnessie.model.ImmutableDeltaLakeTable;
 import org.projectnessie.model.Reference;
 import org.projectnessie.server.store.TableCommitMetaStoreWorker;
 import org.projectnessie.services.config.ServerConfig;
-import org.projectnessie.services.rest.RestContentsResource;
+import org.projectnessie.services.rest.RestContentResource;
 import org.projectnessie.services.rest.RestTreeResource;
 import org.projectnessie.versioned.BranchName;
 import org.projectnessie.versioned.Key;
 import org.projectnessie.versioned.NamedRef;
-import org.projectnessie.versioned.persist.adapter.ContentsId;
+import org.projectnessie.versioned.persist.adapter.ContentId;
 import org.projectnessie.versioned.persist.adapter.DatabaseAdapter;
 import org.projectnessie.versioned.persist.adapter.ImmutableCommitAttempt;
 import org.projectnessie.versioned.persist.adapter.KeyWithBytes;
@@ -89,10 +89,10 @@ abstract class AbstractGCTest {
   static final Instant NOW = Instant.ofEpochSecond(1000);
   static final Instant NOT_LIVE = Instant.ofEpochSecond(500);
 
-  static ContentsKey TABLE_ONE = ContentsKey.of("table", "one");
-  static ContentsKey TABLE_TWO = ContentsKey.of("table", "two");
-  static ContentsKey TABLE_THREE = ContentsKey.of("table", "three");
-  static ContentsKey TABLE_FOUR = ContentsKey.of("table", "four");
+  static ContentKey TABLE_ONE = ContentKey.of("table", "one");
+  static ContentKey TABLE_TWO = ContentKey.of("table", "two");
+  static ContentKey TABLE_THREE = ContentKey.of("table", "three");
+  static ContentKey TABLE_FOUR = ContentKey.of("table", "four");
   static String CID_ONE = "table-one";
   static String CID_TWO = "table-two";
   static String CID_THREE = "table-three";
@@ -104,7 +104,7 @@ abstract class AbstractGCTest {
    * same, timestamps are exactly the same, hashes however do vary.
    */
   protected void datasetsTest(Dataset dataset, DatabaseAdapter databaseAdapter) {
-    PersistVersionStore<Contents, CommitMeta, Contents.Type> versionStore =
+    PersistVersionStore<Content, CommitMeta, Content.Type> versionStore =
         new PersistVersionStore<>(databaseAdapter, STORE_WORKER);
     ServerConfig serverConfig =
         new ServerConfig() {
@@ -119,20 +119,20 @@ abstract class AbstractGCTest {
           }
         };
     HttpTreeApi treeApi = new RestTreeResource(serverConfig, versionStore, null);
-    HttpContentsApi contentsApi = new RestContentsResource(serverConfig, versionStore, null);
-    HttpApiV1 api = new HttpApiV1(new NessieApiClient(null, treeApi, contentsApi));
+    HttpContentApi contentApi = new RestContentResource(serverConfig, versionStore, null);
+    HttpApiV1 api = new HttpApiV1(new NessieApiClient(null, treeApi, contentApi));
 
     GC.Builder gcBuilder = GC.builder().withApi(api).withDefaultLiveAfterValue(NOT_LIVE);
     gcBuilder.withContentTypeInclusionPredicate(dataset.contentTypeInclusionPredicate);
     dataset.liveAfterComputations.forEach(gcBuilder::addLiveAfterComputation);
     GC gc = gcBuilder.build();
 
-    ContentsValuesCollector<IcebergContentsValues> contentsValuesCollector =
-        new ContentsValuesCollector<>(IcebergContentsValues::new);
+    ContentValuesCollector<IcebergContentValues> contentValuesCollector =
+        new ContentValuesCollector<>(IcebergContentValues::new);
 
-    GCResult<IcebergContentsValues> contentsValuesPerType = gc.performGC(contentsValuesCollector);
+    GCResult<IcebergContentValues> contentValuesPerType = gc.performGC(contentValuesCollector);
 
-    dataset.verify(contentsValuesPerType);
+    dataset.verify(contentValuesPerType);
   }
 
   /** Produces the datasets verified via {@link #datasetsTest(Dataset, DatabaseAdapter)}. */
@@ -158,8 +158,8 @@ abstract class AbstractGCTest {
     return ds
         //
         .commit(NOT_LIVE.minusSeconds(2))
-        .put(TABLE_ONE, IcebergTable.of("meta1", "x", CID_ONE), true)
-        .put(TABLE_TWO, IcebergTable.of("meta2", "x", CID_TWO), false)
+        .put(TABLE_ONE, IcebergTable.of("meta1", 42, 42, 42, 42, CID_ONE), true)
+        .put(TABLE_TWO, IcebergTable.of("meta2", 42, 42, 42, 42, CID_TWO), false)
         .build()
         //
         .commit(NOT_LIVE.minusSeconds(1))
@@ -170,7 +170,7 @@ abstract class AbstractGCTest {
         .build()
         //
         .commit(NOT_LIVE.plusSeconds(1))
-        .put(TABLE_THREE, IcebergTable.of("meta3", "x", CID_THREE), true)
+        .put(TABLE_THREE, IcebergTable.of("meta3", 42, 42, 42, 42, CID_THREE), true)
         .build()
         //
         // create branches
@@ -214,8 +214,8 @@ abstract class AbstractGCTest {
         .contentTypeInclusionPredicate(type -> type == Type.ICEBERG_TABLE)
         //
         .commit(NOT_LIVE.minusSeconds(2))
-        .put(TABLE_ONE, IcebergTable.of("meta1", "x", CID_ONE), true)
-        .put(TABLE_TWO, IcebergTable.of("meta2", "x", CID_TWO), false)
+        .put(TABLE_ONE, IcebergTable.of("meta1", 42, 42, 42, 42, CID_ONE), true)
+        .put(TABLE_TWO, IcebergTable.of("meta2", 42, 42, 42, 42, CID_TWO), false)
         .build()
         //
         .commit(NOT_LIVE.minusSeconds(1))
@@ -241,7 +241,7 @@ abstract class AbstractGCTest {
         .build()
         //
         .commit(NOT_LIVE.plusSeconds(1))
-        .put(TABLE_THREE, IcebergTable.of("meta3", "x", CID_THREE), true)
+        .put(TABLE_THREE, IcebergTable.of("meta3", 42, 42, 42, 42, CID_THREE), true)
         .build();
   }
 
@@ -249,8 +249,8 @@ abstract class AbstractGCTest {
     return ds
         //
         .commit(NOT_LIVE.minusSeconds(2))
-        .put(TABLE_ONE, IcebergTable.of("meta1", "x", CID_ONE), true)
-        .put(TABLE_TWO, IcebergTable.of("meta2", "x", CID_TWO), false)
+        .put(TABLE_ONE, IcebergTable.of("meta1", 42, 42, 42, 42, CID_ONE), true)
+        .put(TABLE_TWO, IcebergTable.of("meta2", 42, 42, 42, 42, CID_TWO), false)
         .build()
         //
         .commit(NOT_LIVE.minusSeconds(1))
@@ -261,7 +261,7 @@ abstract class AbstractGCTest {
         .build()
         //
         .commit(NOT_LIVE.plusSeconds(1))
-        .put(TABLE_THREE, IcebergTable.of("meta3", "x", CID_THREE), true)
+        .put(TABLE_THREE, IcebergTable.of("meta3", 42, 42, 42, 42, CID_THREE), true)
         .build()
         //
         // create branches
@@ -276,7 +276,7 @@ abstract class AbstractGCTest {
         .branch("branch-2")
         .commit(NOW.minusSeconds(11))
         .delete(TABLE_ONE)
-        .put(TABLE_FOUR, IcebergTable.of("meta2_1", "x", CID_TWO), true)
+        .put(TABLE_FOUR, IcebergTable.of("meta2_1", 42, 42, 42, 42, CID_TWO), true)
         .build()
         .commit(NOW.minusSeconds(10))
         .delete(TABLE_THREE)
@@ -287,7 +287,7 @@ abstract class AbstractGCTest {
     final Instant ts;
     final NamedRef ref;
     final Dataset dataset;
-    final Map<ContentsId, ByteString> globals = new HashMap<>();
+    final Map<ContentId, ByteString> globals = new HashMap<>();
     final List<KeyWithBytes> puts = new ArrayList<>();
     final List<Key> deletes = new ArrayList<>();
 
@@ -298,34 +298,34 @@ abstract class AbstractGCTest {
     }
 
     /**
-     * Adds a "Put operation" for a key/contents-id/contents-value and whether that value is
-     * expected to be live or non-live after GC.
+     * Adds a "Put operation" for a key/content-id/content-value and whether that value is expected
+     * to be live or non-live after GC.
      */
-    CommitBuilder put(ContentsKey key, Contents contents, boolean expectLive) {
-      ContentsId cid = ContentsId.of(contents.getId());
+    CommitBuilder put(ContentKey key, Content content, boolean expectLive) {
+      ContentId cid = ContentId.of(content.getId());
       puts.add(
           KeyWithBytes.of(
               Key.of(key.getElements().toArray(new String[0])),
               cid,
-              (byte) STORE_WORKER.getType(contents).ordinal(),
-              STORE_WORKER.toStoreOnReferenceState(contents)));
-      if (STORE_WORKER.requiresGlobalState(contents)) {
-        globals.put(cid, STORE_WORKER.toStoreGlobalState(contents));
+              (byte) STORE_WORKER.getType(content).ordinal(),
+              STORE_WORKER.toStoreOnReferenceState(content)));
+      if (STORE_WORKER.requiresGlobalState(content)) {
+        globals.put(cid, STORE_WORKER.toStoreGlobalState(content));
       }
       Map<String, Set<Object>> expect =
-          expectLive && dataset.contentTypeInclusionPredicate.test(STORE_WORKER.getType(contents))
+          expectLive && dataset.contentTypeInclusionPredicate.test(STORE_WORKER.getType(content))
               ? dataset.expectLive
               : dataset.expectNotLive;
-      Object o = contents;
-      if (contents instanceof IcebergTable) {
-        o = ((IcebergTable) contents).getMetadataLocation();
+      Object o = content;
+      if (content instanceof IcebergTable) {
+        o = ((IcebergTable) content).getMetadataLocation();
       }
-      expect.computeIfAbsent(contents.getId(), x -> new HashSet<>()).add(o);
+      expect.computeIfAbsent(content.getId(), x -> new HashSet<>()).add(o);
       return this;
     }
 
     /** Adds a "Delete operation" for a key. */
-    CommitBuilder delete(ContentsKey delete) {
+    CommitBuilder delete(ContentKey delete) {
       deletes.add(Key.of(delete.getElements().toArray(new String[0])));
       return this;
     }
@@ -368,7 +368,7 @@ abstract class AbstractGCTest {
     final Map<String, Set<Object>> expectLive = new HashMap<>();
     final Map<String, Set<Object>> expectNotLive = new HashMap<>();
     final List<Function<Reference, Instant>> liveAfterComputations = new ArrayList<>();
-    Predicate<Contents.Type> contentTypeInclusionPredicate = type -> true;
+    Predicate<Content.Type> contentTypeInclusionPredicate = type -> true;
 
     Dataset(String name) {
       this.name = name;
@@ -380,7 +380,7 @@ abstract class AbstractGCTest {
       return this;
     }
 
-    Dataset contentTypeInclusionPredicate(Predicate<Contents.Type> contentTypeInclusionPredicate) {
+    Dataset contentTypeInclusionPredicate(Predicate<Content.Type> contentTypeInclusionPredicate) {
       this.contentTypeInclusionPredicate = contentTypeInclusionPredicate;
       return this;
     }
@@ -414,19 +414,19 @@ abstract class AbstractGCTest {
     }
 
     /**
-     * Verifies that the {@link GCResult} contains the expected contents-ids and live/non-live
-     * contents-values.
+     * Verifies that the {@link GCResult} contains the expected content-ids and live/non-live
+     * content-values.
      */
-    void verify(GCResult<IcebergContentsValues> contentsValuesPerType) {
-      assertThat(contentsValuesPerType.getContentsValues()).isNotNull();
+    void verify(GCResult<IcebergContentValues> contentValuesPerType) {
+      assertThat(contentValuesPerType.getContentValues()).isNotNull();
 
-      Map<String, IcebergContentsValues> got = contentsValuesPerType.getContentsValues();
+      Map<String, IcebergContentValues> got = contentValuesPerType.getContentValues();
       assertThat(
               got.entrySet().stream()
                   .filter(e -> !e.getValue().getLiveMetadataPointers().isEmpty())
                   .collect(
                       Collectors.toMap(Entry::getKey, e -> e.getValue().getLiveMetadataPointers())))
-          .describedAs("expected live contents in GCResult'")
+          .describedAs("expected live content in GCResult'")
           .isEqualTo(expectLive);
       assertThat(
               expectNotLive.entrySet().stream()
@@ -434,7 +434,7 @@ abstract class AbstractGCTest {
                       Collectors.toMap(
                           Entry::getKey,
                           e -> {
-                            IcebergContentsValues cv = got.get(e.getKey());
+                            IcebergContentValues cv = got.get(e.getKey());
                             if (cv != null) {
                               return e.getValue().stream()
                                   .filter(cv.getLiveMetadataPointers()::contains)
@@ -442,7 +442,7 @@ abstract class AbstractGCTest {
                             }
                             return Collections.emptySet();
                           })))
-          .describedAs("expected not-live contents in GCResult'")
+          .describedAs("expected not-live content in GCResult'")
           .asInstanceOf(InstanceOfAssertFactories.map(String.class, Set.class))
           .allSatisfy(
               (k, v) ->

@@ -107,7 +107,7 @@ public class TreeApiImpl extends BaseApiImpl implements TreeApi {
 
   public TreeApiImpl(
       ServerConfig config,
-      VersionStore<Contents, CommitMeta, Contents.Type> store,
+      VersionStore<Content, CommitMeta, Content.Type> store,
       AccessChecker accessChecker,
       Principal principal,
       Clock clock) {

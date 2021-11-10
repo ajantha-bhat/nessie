@@ -17,14 +17,14 @@ package org.projectnessie.versioned.persist.gc;
 
 import java.util.Map;
 
-public class GCResult<GC_CONTENTS_VALUES extends ContentsValues> {
-  private final Map<String, GC_CONTENTS_VALUES> contentsValues;
+public class GCResult<GC_CONTENT_VALUES extends ContentValues> {
+  private final Map<String, GC_CONTENT_VALUES> contentValues;
 
-  public GCResult(Map<String, GC_CONTENTS_VALUES> contentsValues) {
-    this.contentsValues = contentsValues;
+  public GCResult(Map<String, GC_CONTENT_VALUES> contentValues) {
+    this.contentValues = contentValues;
   }
 
-  public Map<String, GC_CONTENTS_VALUES> getContentsValues() {
-    return contentsValues;
+  public Map<String, GC_CONTENT_VALUES> getContentValues() {
+    return contentValues;
   }
 }

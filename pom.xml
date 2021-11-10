@@ -163,7 +163,7 @@
     <google-java-format.version>1.13.0</google-java-format.version>
     <guava.version>31.0.1-jre</guava.version>
     <hadoop.version>3.3.1</hadoop.version>
-    <iceberg.version>release-base-0.12.0-159-g2de34ed</iceberg.version>
+    <iceberg.version>release-base-0.12.0-144-g4276e63</iceberg.version>
     <immutables.version>2.8.9-ea-1</immutables.version>
     <jackson.version>2.13.0</jackson.version>
     <javax.version>4.0.1</javax.version>
