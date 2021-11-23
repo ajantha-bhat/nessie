@@ -129,11 +129,7 @@ abstract class AbstractIcebergGc {
 
   static List<IcebergGcScenario> icebergGcScenarios() {
     return Arrays.asList(
-        differentSchemas(),
-        repeatedIdentifyExpireRuns(),
-        singleBranchSimple(),
-        twoBranchSeparate(),
-        twoBranchShared());
+        repeatedIdentifyExpireRuns());
   }
 
   private static IcebergGcScenario differentSchemas() {
@@ -192,25 +188,25 @@ abstract class AbstractIcebergGc {
         .expectCollect(DEFAULT_CATALOG, TABLE_1, 1, 1, 1)
         //
         .identifyProcedure(GC_CATALOG, NOT_LIVE)
-        .identifyProcedure(GC_CATALOG, NOT_LIVE)
-        .identifyProcedure(GC_CATALOG, NOT_LIVE)
-        .identifyProcedure(GC_CATALOG, NOT_LIVE)
-        .identifyProcedure(GC_CATALOG, NOT_LIVE)
+        // .identifyProcedure(GC_CATALOG, NOT_LIVE)
+        // .identifyProcedure(GC_CATALOG, NOT_LIVE)
+        // .identifyProcedure(GC_CATALOG, NOT_LIVE)
+        // .identifyProcedure(GC_CATALOG, NOT_LIVE)
+        // .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH)
+        // .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH)
+        // .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH)
+        // .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH)
         .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH)
-        .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH)
-        .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH)
-        .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH)
-        .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH)
-        .identifyProcedure(GC_CATALOG, NOT_LIVE)
-        .identifyProcedure(GC_CATALOG, NOT_LIVE)
-        .identifyProcedure(GC_CATALOG, NOT_LIVE)
-        .identifyProcedure(GC_CATALOG, NOT_LIVE)
-        .identifyProcedure(GC_CATALOG, NOT_LIVE)
-        .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH)
-        .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH)
-        .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH)
-        .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH)
-        .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH);
+        .identifyProcedure(GC_CATALOG, NOT_LIVE);
+        // .identifyProcedure(GC_CATALOG, NOT_LIVE)
+        // .identifyProcedure(GC_CATALOG, NOT_LIVE)
+        // .identifyProcedure(GC_CATALOG, NOT_LIVE)
+        // .identifyProcedure(GC_CATALOG, NOT_LIVE)
+        // .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH)
+        // .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH)
+        // .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH)
+        // .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH)
+        // .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH);
   }
 
   private static IcebergGcScenario twoBranchShared() {
