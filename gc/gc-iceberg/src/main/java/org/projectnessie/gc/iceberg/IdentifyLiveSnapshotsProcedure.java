@@ -158,6 +158,8 @@ public class IdentifyLiveSnapshotsProcedure extends AbstractGcProcedure {
   private InternalRow performGarbageIdentification(String runId, Timestamp started, GC gc) {
     LOGGER.info("GC run {}: Performing garbage identification...", runId);
 
+    // TODO: need an interface to skip gc_table content or we should filter it after getting the
+    // output here ?
     GCResult<IcebergContentValues> gcResult =
         gc.performGC(new ContentValuesCollector<>(IcebergContentValues::new));
 
@@ -172,17 +174,18 @@ public class IdentifyLiveSnapshotsProcedure extends AbstractGcProcedure {
         String cid = cidAndValues.getKey();
         IcebergContentValues collectables = cidAndValues.getValue();
 
+        String tableIdentifier = toIdentifier(collectables.getLiveKey()).toString();
         IcebergGcRecord gcRecord =
             ImmutableIcebergGcRecord.builder()
                 .rowType(IcebergGcRepo.TYPE_CONTENT)
                 .contentId(cid)
-                .liveMetadataPointers(collectables.getLiveMetadataPointers())
-                .referencesWithHashToKeys(
-                    collectables.getReferencesToKeyAndHash().entrySet().stream()
-                        .collect(
-                            Collectors.toMap(
-                                e -> String.format("%s#%s", e.getKey(), e.getValue().getHash()),
-                                e -> toIdentifier(e.getValue().getKey()).toString())))
+                .liveSnapshotIds(
+                    collectables.getLiveSnapshotIds().stream()
+                        .map(Object::toString)
+                        .collect(Collectors.joining(" ")))
+                .liveAtReferenceName(collectables.getLiveAtReference().getName())
+                .liveAtHash(collectables.getLiveAtReference().getHash())
+                .tableIdentifier(tableIdentifier)
                 .gcRunStart(started)
                 .gcRunId(runId)
                 .build();

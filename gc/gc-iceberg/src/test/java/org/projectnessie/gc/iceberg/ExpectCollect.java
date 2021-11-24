@@ -22,21 +22,18 @@ class ExpectCollect {
   final String contentId;
   int numLiveSnapshots;
   int numCollectedSnapshots;
-  int numLiveMetadataPointers;
 
   ExpectCollect(
       String referenceName,
       String tableName,
       String contentId,
       int numLiveSnapshots,
-      int numCollectedSnapshots,
-      int numLiveMetadataPointers) {
+      int numCollectedSnapshots) {
     this.referenceName = referenceName;
     this.tableName = tableName;
     this.contentId = contentId;
     this.numLiveSnapshots = numLiveSnapshots;
     this.numCollectedSnapshots = numCollectedSnapshots;
-    this.numLiveMetadataPointers = numLiveMetadataPointers;
   }
 
   @Override
@@ -52,8 +49,6 @@ class ExpectCollect {
         + numLiveSnapshots
         + ", numCollectedSnapshots="
         + numCollectedSnapshots
-        + ", numLiveMetadataPointers="
-        + numLiveMetadataPointers
         + '}';
   }
 }

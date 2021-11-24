@@ -189,7 +189,7 @@ abstract class AbstractIcebergGc {
             })
         .setClock(NOT_LIVE.plusSeconds(10))
         .againstSpark(sparkSession -> sparkSession.sql("INSERT INTO " + T1 + " VALUES ('bar')"))
-        .expectCollect(DEFAULT_CATALOG, TABLE_1, 1, 1, 1)
+        .expectCollect(DEFAULT_CATALOG, TABLE_1, 1, 1)
         //
         .identifyProcedure(GC_CATALOG, NOT_LIVE)
         .identifyProcedure(GC_CATALOG, NOT_LIVE)
@@ -224,7 +224,7 @@ abstract class AbstractIcebergGc {
               sparkSession.sql("CREATE TABLE " + T1 + " (some_text STRING) USING iceberg");
               sparkSession.sql("INSERT INTO " + T1 + " VALUES ('foo')");
             })
-        .expectCollect(DEFAULT_CATALOG, TABLE_1, 0, 1, 0)
+        .expectCollect(DEFAULT_CATALOG, TABLE_1, 0, 1)
         //
         .changeRef(DEFAULT_CATALOG, BRANCH_A)
         .setClock(NOT_LIVE.minusSeconds(10))
@@ -235,7 +235,7 @@ abstract class AbstractIcebergGc {
             })
         .setClock(NOT_LIVE.plusSeconds(1))
         .againstSpark(sparkSession -> sparkSession.sql("INSERT INTO " + T2 + " VALUES ('bvar')"))
-        .expectCollect(DEFAULT_CATALOG, TABLE_2, 1, 1, 1)
+        .expectCollect(DEFAULT_CATALOG, TABLE_2, 1, 1)
         //
         .changeRef(DEFAULT_CATALOG, BRANCH_B)
         .setClock(NOT_LIVE.minusSeconds(10))
@@ -247,7 +247,7 @@ abstract class AbstractIcebergGc {
             })
         .setClock(NOT_LIVE.plusSeconds(1))
         .againstSpark(sparkSession -> sparkSession.sql("INSERT INTO " + T2 + " VALUES ('bvar')"))
-        .expectCollect(DEFAULT_CATALOG, TABLE_2, 1, 1, 1)
+        .expectCollect(DEFAULT_CATALOG, TABLE_2, 1, 1)
         //
         .identifyProcedure(GC_CATALOG, NOT_LIVE)
         .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH);
@@ -267,7 +267,7 @@ abstract class AbstractIcebergGc {
             })
         .setClock(NOT_LIVE.plusSeconds(10))
         .againstSpark(sparkSession -> sparkSession.sql("INSERT INTO " + T1 + " VALUES ('bar')"))
-        .expectCollect(DEFAULT_CATALOG, TABLE_1, 1, 1, 1)
+        .expectCollect(DEFAULT_CATALOG, TABLE_1, 1, 1)
         //
         .changeRef(DEFAULT_CATALOG, BRANCH_B)
         .setClock(NOT_LIVE.minusSeconds(10))
@@ -278,7 +278,7 @@ abstract class AbstractIcebergGc {
             })
         .setClock(NOT_LIVE.plusSeconds(10))
         .againstSpark(sparkSession -> sparkSession.sql("INSERT INTO " + T1 + " VALUES ('bar_2')"))
-        .expectCollect(DEFAULT_CATALOG, TABLE_1, 1, 1, 1)
+        .expectCollect(DEFAULT_CATALOG, TABLE_1, 1, 1)
         //
         .identifyProcedure(GC_CATALOG, NOT_LIVE)
         .expireProcedure(GC_CATALOG, GC_EXPIRE_BRANCH);
@@ -297,7 +297,7 @@ abstract class AbstractIcebergGc {
         .setClock(NOT_LIVE.minusSeconds(3))
         .againstSpark(
             sparkSession -> sparkSession.sql("INSERT INTO " + T1 + " VALUES ('hello'), ('world')"))
-        .expectCollect(DEFAULT_CATALOG, TABLE_1, 0, 1, 0)
+        .expectCollect(DEFAULT_CATALOG, TABLE_1, 0, 1)
         .setClock(NOT_LIVE.minusSeconds(2))
         .againstSpark(
             sparkSession -> {
@@ -313,7 +313,7 @@ abstract class AbstractIcebergGc {
         .setClock(NOT_LIVE.plusSeconds(10))
         .againstSpark(
             sparkSession -> sparkSession.sql("INSERT INTO " + T2_RENAMED + " VALUES ('live')"))
-        .expectCollect(DEFAULT_CATALOG, TABLE_2_RENAMED, 1, 3, 1)
+        .expectCollect(DEFAULT_CATALOG, TABLE_2_RENAMED, 1, 3)
         .againstSpark(sparkSession -> sparkSession.sql("DROP TABLE " + T2_RENAMED))
         //
         .identifyProcedure(GC_CATALOG, NOT_LIVE)
@@ -341,7 +341,7 @@ abstract class AbstractIcebergGc {
     HttpTreeApi treeApi = new RestTreeResource(serverConfig, versionStore, null, TEST_CLOCK);
     HttpContentApi contentApi = new RestContentResource(serverConfig, versionStore, null);
     HttpConfigApi configApi = new RestConfigResource(serverConfig);
-    HttpApiV1 api = new HttpApiV1(new NessieApiClient(configApi, treeApi, contentApi));
+    HttpApiV1 api = new HttpApiV1(new NessieApiClient(configApi, treeApi, contentApi, null));
 
     try {
       api.createReference()

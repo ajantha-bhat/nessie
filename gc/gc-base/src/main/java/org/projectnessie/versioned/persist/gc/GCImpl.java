@@ -17,6 +17,7 @@ package org.projectnessie.versioned.persist.gc;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.OptionalInt;
 import java.util.Spliterator;
 import java.util.Spliterators.AbstractSpliterator;
@@ -34,6 +35,7 @@ import org.projectnessie.model.Content;
 import org.projectnessie.model.Content.Type;
 import org.projectnessie.model.ContentKey;
 import org.projectnessie.model.EntriesResponse;
+import org.projectnessie.model.LogResponse;
 import org.projectnessie.model.Reference;
 import org.projectnessie.model.Tag;
 import org.slf4j.Logger;
@@ -73,7 +75,8 @@ final class GCImpl implements GC {
       walkReference(
           contentValuesCollector,
           reference,
-          commitMeta -> cutOffTimestamp.compareTo(commitMeta.getCommitTime()) < 0);
+          commitMeta ->
+              cutOffTimestamp.compareTo(Objects.requireNonNull(commitMeta.getCommitTime())) < 0);
     }
 
     return new GCResult<>(contentValuesCollector.contentValues);
@@ -83,42 +86,44 @@ final class GCImpl implements GC {
       ContentValuesCollector<GC_CONTENT_VALUES> contentValuesCollector,
       Reference reference,
       Predicate<CommitMeta> liveCommitPredicate) {
-    Consumer<CommitMeta> perCommit =
-        commitMeta ->
+    Consumer<LogResponse.LogEntry> perCommit =
+        logEntry ->
             handleCommit(
                 contentValuesCollector,
                 reference,
-                commitMeta,
-                liveCommitPredicate.test(commitMeta));
+                logEntry.getCommitMeta(),
+                liveCommitPredicate.test(logEntry.getCommitMeta()));
 
-    try (Stream<CommitMeta> commits =
+    try (Stream<LogResponse.LogEntry> commits =
         StreamingUtil.getCommitLogStream(
             api, reference.getName(), null, null, null, OptionalInt.empty())) {
-      Spliterator<CommitMeta> src = commits.spliterator();
+      Spliterator<LogResponse.LogEntry> src = commits.spliterator();
 
       // Use a Spliterator to limit the processed commits to the "live" commits - i.e. stop at the
       // first "non-live" commit.
-      new AbstractSpliterator<CommitMeta>(src.estimateSize(), 0) {
+      new AbstractSpliterator<LogResponse.LogEntry>(src.estimateSize(), 0) {
         private boolean more = true;
-        private boolean any = false;
+        private boolean refHead = true;
 
         @Override
-        public boolean tryAdvance(Consumer<? super CommitMeta> action) {
+        public boolean tryAdvance(Consumer<? super LogResponse.LogEntry> action) {
           if (!more) {
             return false;
           }
           more =
               src.tryAdvance(
-                  commitMeta -> {
-                    if (readUntilCommitTimestamp.compareTo(commitMeta.getCommitTime()) > 0) {
+                  logEntry -> {
+                    if (readUntilCommitTimestamp.compareTo(
+                            Objects.requireNonNull(logEntry.getCommitMeta().getCommitTime()))
+                        > 0) {
                       more = false;
                     }
                     // Process the commit if either the commit is considered live (i.e. the
                     // liveCommitPredicate yields 'true') or at least for the very first commit
                     // (aka the reference's HEAD).
-                    if (more || !any) {
-                      action.accept(commitMeta);
-                      any = true;
+                    if (more || refHead) {
+                      action.accept(logEntry);
+                      refHead = false;
                     }
                   });
           return more;

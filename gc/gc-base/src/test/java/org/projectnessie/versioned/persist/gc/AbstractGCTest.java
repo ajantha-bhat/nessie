@@ -21,7 +21,6 @@ import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import com.google.protobuf.ByteString;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -32,7 +31,6 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
-import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -53,6 +51,7 @@ import org.projectnessie.services.config.ServerConfig;
 import org.projectnessie.services.rest.RestContentResource;
 import org.projectnessie.services.rest.RestTreeResource;
 import org.projectnessie.versioned.BranchName;
+import org.projectnessie.versioned.GetNamedRefsParams;
 import org.projectnessie.versioned.Key;
 import org.projectnessie.versioned.NamedRef;
 import org.projectnessie.versioned.persist.adapter.ContentId;
@@ -120,7 +119,7 @@ abstract class AbstractGCTest {
         };
     HttpTreeApi treeApi = new RestTreeResource(serverConfig, versionStore, null);
     HttpContentApi contentApi = new RestContentResource(serverConfig, versionStore, null);
-    HttpApiV1 api = new HttpApiV1(new NessieApiClient(null, treeApi, contentApi));
+    HttpApiV1 api = new HttpApiV1(new NessieApiClient(null, treeApi, contentApi, null));
 
     GC.Builder gcBuilder = GC.builder().withApi(api).withDefaultLiveAfterValue(NOT_LIVE);
     gcBuilder.withContentTypeInclusionPredicate(dataset.contentTypeInclusionPredicate);
@@ -276,7 +275,7 @@ abstract class AbstractGCTest {
         .branch("branch-2")
         .commit(NOW.minusSeconds(11))
         .delete(TABLE_ONE)
-        .put(TABLE_FOUR, IcebergTable.of("meta2_1", 42, 42, 42, 42, CID_TWO), true)
+        .put(TABLE_FOUR, IcebergTable.of("meta2_1", 43, 42, 42, 42, CID_TWO), true)
         .build()
         .commit(NOW.minusSeconds(10))
         .delete(TABLE_THREE)
@@ -312,15 +311,15 @@ abstract class AbstractGCTest {
       if (STORE_WORKER.requiresGlobalState(content)) {
         globals.put(cid, STORE_WORKER.toStoreGlobalState(content));
       }
-      Map<String, Set<Object>> expect =
-          expectLive && dataset.contentTypeInclusionPredicate.test(STORE_WORKER.getType(content))
-              ? dataset.expectLive
-              : dataset.expectNotLive;
-      Object o = content;
-      if (content instanceof IcebergTable) {
-        o = ((IcebergTable) content).getMetadataLocation();
+      Map<String, Set<Object>> expect = expectLive ? dataset.expectLive : dataset.expectNotLive;
+      if (dataset.contentTypeInclusionPredicate.test(STORE_WORKER.getType(content))) {
+        Object o = content;
+        if (content instanceof IcebergTable) {
+          // just add snapshot id instead of whole content
+          o = ((IcebergTable) content).getSnapshotId();
+        }
+        expect.computeIfAbsent(content.getId(), x -> new HashSet<>()).add(o);
       }
-      expect.computeIfAbsent(content.getId(), x -> new HashSet<>()).add(o);
       return this;
     }
 
@@ -396,7 +395,8 @@ abstract class AbstractGCTest {
         ops.add(
             adapter -> {
               try {
-                adapter.create(ref, adapter.toHash(current));
+                adapter.create(
+                    ref, adapter.namedRef(current.getName(), GetNamedRefsParams.DEFAULT).getHash());
               } catch (Exception e) {
                 throw new RuntimeException(e);
               }
@@ -423,32 +423,18 @@ abstract class AbstractGCTest {
       Map<String, IcebergContentValues> got = contentValuesPerType.getContentValues();
       assertThat(
               got.entrySet().stream()
-                  .filter(e -> !e.getValue().getLiveMetadataPointers().isEmpty())
-                  .collect(
-                      Collectors.toMap(Entry::getKey, e -> e.getValue().getLiveMetadataPointers())))
+                  .filter(e -> !e.getValue().getLiveSnapshotIds().isEmpty())
+                  .collect(Collectors.toMap(Entry::getKey, e -> e.getValue().getLiveSnapshotIds())))
           .describedAs("expected live content in GCResult'")
           .isEqualTo(expectLive);
+
       assertThat(
-              expectNotLive.entrySet().stream()
+              got.entrySet().stream()
+                  .filter(e -> !e.getValue().getNonLiveSnapshotIds().isEmpty())
                   .collect(
-                      Collectors.toMap(
-                          Entry::getKey,
-                          e -> {
-                            IcebergContentValues cv = got.get(e.getKey());
-                            if (cv != null) {
-                              return e.getValue().stream()
-                                  .filter(cv.getLiveMetadataPointers()::contains)
-                                  .collect(Collectors.toSet());
-                            }
-                            return Collections.emptySet();
-                          })))
+                      Collectors.toMap(Entry::getKey, e -> e.getValue().getNonLiveSnapshotIds())))
           .describedAs("expected not-live content in GCResult'")
-          .asInstanceOf(InstanceOfAssertFactories.map(String.class, Set.class))
-          .allSatisfy(
-              (k, v) ->
-                  assertThat(v)
-                      .asInstanceOf(InstanceOfAssertFactories.iterable(Object.class))
-                      .isEmpty());
+          .isEqualTo(expectNotLive);
     }
 
     Dataset recordCommit(Consumer<DatabaseAdapter> commitProducer) {

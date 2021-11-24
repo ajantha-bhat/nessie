@@ -171,7 +171,6 @@ abstract class AbstractGcProcedure extends BaseGcProcedure {
 
   protected IcebergGcRepo openRepo() {
     TableIdentifier tableIdent = TableIdentifier.parse(gcTable);
-
     return new IcebergGcRepo(spark(), writerBatchSize, catalog, tableIdent);
   }
 

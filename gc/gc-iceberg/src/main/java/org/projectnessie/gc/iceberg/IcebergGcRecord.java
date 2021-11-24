@@ -16,12 +16,10 @@
 package org.projectnessie.gc.iceberg;
 
 import java.sql.Timestamp;
-import java.util.List;
-import java.util.Map;
 import javax.annotation.Nullable;
 import org.immutables.value.Value;
 
-@Value.Immutable
+@Value.Immutable(lazyhash = true)
 @Value.Style(jdkOnly = true)
 public interface IcebergGcRecord {
 
@@ -35,8 +33,14 @@ public interface IcebergGcRecord {
   String getContentId();
 
   @Nullable
-  List<String> getLiveMetadataPointers();
+  String getLiveSnapshotIds();
 
   @Nullable
-  Map<String, String> getReferencesWithHashToKeys();
+  String getTableIdentifier();
+
+  @Nullable
+  String getLiveAtReferenceName();
+
+  @Nullable
+  String getLiveAtHash();
 }

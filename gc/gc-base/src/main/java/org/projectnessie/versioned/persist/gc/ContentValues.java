@@ -15,8 +15,6 @@
  */
 package org.projectnessie.versioned.persist.gc;
 
-import java.util.HashMap;
-import java.util.Map;
 import org.projectnessie.model.Content;
 import org.projectnessie.model.ContentKey;
 import org.projectnessie.model.Reference;
@@ -28,15 +26,23 @@ import org.projectnessie.model.Reference;
 public abstract class ContentValues {
 
   /** A reference via which this content object (table) is reachable. */
-  private final Map<String, KeyAndHash> referencesToKeyAndHash = new HashMap<>();
+  private Reference liveAtReference;
 
-  public Map<String, KeyAndHash> getReferencesToKeyAndHash() {
-    return referencesToKeyAndHash;
+  private ContentKey liveKey;
+
+  public ContentKey getLiveKey() {
+    return liveKey;
+  }
+
+  public Reference getLiveAtReference() {
+    return liveAtReference;
   }
 
   private void setLiveAtIfAbsent(Reference reference, ContentKey key) {
-    referencesToKeyAndHash.putIfAbsent(
-        reference.getName(), KeyAndHash.of(key, reference.getHash()));
+    if (this.liveAtReference == null) {
+      liveAtReference = reference;
+      liveKey = key;
+    }
   }
 
   void gotValue(Content content, Reference reference, ContentKey key, boolean isLive) {
@@ -44,7 +50,6 @@ public abstract class ContentValues {
       // Remove potentially recorded non-live values. E.g. renaming a table writes both a put+delete
       // operation.
       addValue(content, isLive);
-
       setLiveAtIfAbsent(reference, key);
     }
   }
@@ -53,6 +58,6 @@ public abstract class ContentValues {
 
   @Override
   public String toString() {
-    return "ContentValues{" + ", liveViaKeyInReferences=" + referencesToKeyAndHash + '}';
+    return "ContentValues{" + ", liveAtReference=" + liveAtReference + ", liveKey=" + liveKey + '}';
   }
 }

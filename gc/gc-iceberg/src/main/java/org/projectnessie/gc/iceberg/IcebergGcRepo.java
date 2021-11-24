@@ -35,8 +35,10 @@ final class IcebergGcRepo implements AutoCloseable {
   static final String COL_GC_RUN_ID = "gcRunId";
   static final String COL_GC_RUN_START = "gcRunStart";
   static final String COL_CONTENT_ID = "contentId";
-  static final String COL_LIVE_METADATA_POINTERS = "liveMetadataPointers";
-  static final String COL_REFERENCES_TO_KEYS = "referencesToKeys";
+  static final String COL_LIVE_SNAPSHOT_ID = "liveSnapshotIds";
+  static final String COL_TABLE_IDENTIFIER = "tableIdentifier";
+  static final String COL_LIVE_AT_REFERENCE_NAME = "liveAtReferenceName";
+  static final String COL_LIVE_AT_HASH = "liveAtHash";
 
   static final String TYPE_GC_MARKER = "GC_MARK";
   static final String TYPE_CONTENT = "CONTENT";
@@ -56,11 +58,17 @@ final class IcebergGcRepo implements AutoCloseable {
           + COL_CONTENT_ID
           + " string COMMENT 'Nessie Content.id',\n"
           + "  "
-          + COL_LIVE_METADATA_POINTERS
-          + " array<string> COMMENT 'Iceberg live metadata pointers, can be empty',\n"
+          + COL_LIVE_SNAPSHOT_ID
+          + " string COMMENT 'Iceberg live snapshot IDs, separated by spaces, can be empty',\n"
           + "  "
-          + COL_REFERENCES_TO_KEYS
-          + " map<string, string> COMMENT 'Map of reference-names to content-keys'\n"
+          + COL_TABLE_IDENTIFIER
+          + " string COMMENT 'Iceberg string representation of the TableIdentifier',\n"
+          + "  "
+          + COL_LIVE_AT_REFERENCE_NAME
+          + " string COMMENT 'Name of the reference via which the contentID is visible, plus liveAtHash',\n"
+          + "  "
+          + COL_LIVE_AT_HASH
+          + " string COMMENT 'Hash within liveAtReferenceName'\n"
           + ")\n"
           + "USING iceberg\n"
           + "PARTITIONED BY ("
@@ -119,15 +127,24 @@ final class IcebergGcRepo implements AutoCloseable {
     switch (record.getRowType()) {
       case TYPE_GC_MARKER:
         return RowFactory.create(
-            record.getRowType(), record.getGcRunStart(), record.getGcRunId(), null, null, null);
+            record.getRowType(),
+            record.getGcRunStart(),
+            record.getGcRunId(),
+            null,
+            null,
+            null,
+            null,
+            null);
       case TYPE_CONTENT:
         return RowFactory.create(
             record.getRowType(),
             record.getGcRunStart(),
             record.getGcRunId(),
             record.getContentId(),
-            record.getLiveMetadataPointers(),
-            record.getReferencesWithHashToKeys());
+            record.getLiveSnapshotIds(),
+            record.getTableIdentifier(),
+            record.getLiveAtReferenceName(),
+            record.getLiveAtHash());
       default:
         throw new IllegalArgumentException(
             String.format("Unknown row-type '%s'", record.getRowType()));
@@ -148,8 +165,10 @@ final class IcebergGcRepo implements AutoCloseable {
         break;
       case TYPE_CONTENT:
         b.contentId(row.getString(3))
-            .liveMetadataPointers(row.getList(4))
-            .referencesWithHashToKeys(row.getJavaMap(5));
+            .liveSnapshotIds(row.getString(4))
+            .tableIdentifier(row.getString(5))
+            .liveAtReferenceName(row.getString(6))
+            .liveAtHash(row.getString(7));
         break;
       default:
         throw new IllegalArgumentException(String.format("Unknown row-type '%s'", rowType));
@@ -158,7 +177,7 @@ final class IcebergGcRepo implements AutoCloseable {
     return b.build();
   }
 
-  Dataset<Row> collectExpireableSnapshots(int identifyRuns) {
+  Dataset<Row> collectLiveSnapshots(int identifyRuns) {
     // Subquery to collect the last 'identifyRuns' last GC-run-IDs
     String mostRecentRunIds =
         String.format(
@@ -182,15 +201,18 @@ final class IcebergGcRepo implements AutoCloseable {
             COL_TYPE,
             TYPE_CONTENT);
 
+    // TODO: do we really need order by content id here ?
     String liveSnapshotDetails =
         String.format(
-            "SELECT details.%s, details.%s, details.%s \n"
+            "SELECT DISTINCT details.%s, details.%s, details.%s, details.%s, details.%s \n"
                 + "FROM %s details, (%s) snapshots \n"
                 + "WHERE details.%s = snapshots.%s \n"
                 + "ORDER BY details.%s",
             COL_CONTENT_ID,
-            COL_LIVE_METADATA_POINTERS,
-            COL_REFERENCES_TO_KEYS,
+            COL_LIVE_SNAPSHOT_ID,
+            COL_LIVE_AT_REFERENCE_NAME,
+            COL_LIVE_AT_HASH,
+            COL_TABLE_IDENTIFIER,
             //
             catalogAndTable,
             liveSnapshotIdsQuery,

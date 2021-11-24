@@ -15,36 +15,41 @@
  */
 package org.projectnessie.versioned.persist.gc;
 
-import java.util.LinkedHashSet;
 import java.util.Set;
+import org.agrona.collections.LongHashSet;
 import org.projectnessie.model.Content;
 import org.projectnessie.model.IcebergTable;
 
 public final class IcebergContentValues extends ContentValues {
 
-  private final Set<String> metadataPointers = new LinkedHashSet<>();
-  private final Set<String> nonLiveMetadataPointers = new LinkedHashSet<>();
+  // The "missingValue" for org.agrona.collections.LongHashSet is -1L, which matches the
+  // "no snapshot ID" value in Iceberg.
+  private final LongHashSet snapshotIds = new LongHashSet();
+  private final LongHashSet nonLiveSnapshotIds = new LongHashSet();
 
   @Override
   protected void addValue(Content content, boolean isLive) {
     IcebergTable icebergTable = (IcebergTable) content;
-    String metadataPointer = icebergTable.getMetadataLocation();
+    long snapshotId = icebergTable.getSnapshotId();
 
-    if (isLive) {
-      metadataPointers.add(metadataPointer);
-      nonLiveMetadataPointers.remove(metadataPointer);
-    } else {
-      if (!metadataPointers.contains(metadataPointer)) {
-        nonLiveMetadataPointers.add(metadataPointer);
+    // -1 means "no snapshot"
+    if (snapshotId != -1L) {
+      if (isLive) {
+        snapshotIds.add(snapshotId);
+        nonLiveSnapshotIds.remove(snapshotId);
+      } else {
+        if (!snapshotIds.contains(snapshotId)) {
+          nonLiveSnapshotIds.add(snapshotId);
+        }
       }
     }
   }
 
-  public Set<String> getLiveMetadataPointers() {
-    return metadataPointers;
+  public Set<Long> getLiveSnapshotIds() {
+    return snapshotIds;
   }
 
-  public Set<String> getNonLiveMetadataPointers() {
-    return nonLiveMetadataPointers;
+  public LongHashSet getNonLiveSnapshotIds() {
+    return nonLiveSnapshotIds;
   }
 }

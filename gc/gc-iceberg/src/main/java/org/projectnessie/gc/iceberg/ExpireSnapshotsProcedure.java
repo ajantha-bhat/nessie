@@ -20,19 +20,15 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
+import org.agrona.collections.LongHashSet;
 import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.Table;
-import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.actions.ExpireSnapshots;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.nessie.NessieCatalog;
@@ -199,72 +195,80 @@ public class ExpireSnapshotsProcedure extends AbstractGcProcedure {
 
     // TODO add a guardrail to check that there are at least 'identifyRuns' GC runs
 
-    Map<String, ContentAndMetadataPointers> content = new HashMap<>();
+    Map<String, ContentAndLiveSnapshots> content = new HashMap<>();
     try (IcebergGcRepo repo = openRepo()) {
-      repo.collectExpireableSnapshots(identifyRuns)
+      repo.collectLiveSnapshots(identifyRuns)
           .collectAsList()
           .forEach(
               row -> {
                 String contentId = row.getString(0);
-                List<String> liveMetadataPointers = row.getList(1);
-                Map<String, String> referencesWithHashToKey = row.getJavaMap(2);
-                content.put(
+                String liveSnapshotIds = row.getString(1);
+                LongHashSet live = new LongHashSet();
+                if (!liveSnapshotIds.isEmpty()) {
+                  Arrays.stream(liveSnapshotIds.split(" "))
+                      .mapToLong(Long::parseLong)
+                      .forEach(live::add);
+                }
+                content.compute(
                     contentId,
-                    new ContentAndMetadataPointers(
-                        contentId, new HashSet<>(liveMetadataPointers), referencesWithHashToKey));
+                    (cid, existing) -> {
+                      if (existing != null) {
+                        existing.liveSnapshotIds.addAll(live);
+                        return existing;
+                      } else {
+                        String liveAtRefName = row.getString(2);
+                        String liveAtHash = row.getString(3);
+                        String tableIdent = row.getString(4);
+                        return new ContentAndLiveSnapshots(
+                            contentId, live, liveAtRefName, liveAtHash, tableIdent);
+                      }
+                    });
               });
     }
 
     try (NessieCatalog nessieCatalog = createNessieGcCatalog()) {
-      // TODO this can probably be parallelized
-      for (ContentAndMetadataPointers cmp : content.values()) {
-        // TODO this can probably be parallelized
-        cmp.liveSnapshotIds =
-            cmp.liveMetadataPointers.stream()
-                // TODO try-catch around loadTableMetadata + handling
-                .map(nessieCatalog::loadTableMetadata)
-                .map(TableMetadata::currentSnapshot)
-                .filter(Objects::nonNull)
-                .map(Snapshot::snapshotId)
-                .collect(Collectors.toSet());
-      }
+      //   // TODO this can probably be parallelized
+      //   for (ContentAndSnapshots cmp : content.values()) {
+      //     // TODO this can probably be parallelized
+      //     cmp.liveSnapshotIds =
+      //         cmp.liveMetadataPointers.stream()
+      //             // TODO try-catch around loadTableMetadata + handling
+      //             .map(nessieCatalog::loadTableMetadata)
+      //             .map(TableMetadata::currentSnapshot)
+      //             .filter(Objects::nonNull)
+      //             .map(Snapshot::snapshotId)
+      //             .collect(Collectors.toSet());
+      //   }
 
       List<InternalRow> output = new ArrayList<>();
 
-      for (ContentAndMetadataPointers cmp : content.values()) {
-        for (Entry<String, String> entry : cmp.referencesWithHashToKey.entrySet()) {
-          String refNameAndHash = entry.getKey();
-          int idxHash = refNameAndHash.indexOf('#');
-          String refName = refNameAndHash.substring(0, idxHash);
-          String refHash = refNameAndHash.substring(idxHash + 1);
-          String tableName = entry.getValue();
-          TableInformation tableInformation =
-              new TableInformation(cmp.contentId, tableName, refName, refHash);
-          Timestamp timestamp = Timestamp.from(Instant.now());
-          try {
-            expireForTable(
-                nessieCatalog,
-                timestamp,
-                tableInformation,
-                cmp.liveSnapshotIds,
-                expireBranch,
-                output::add,
-                doExpire,
-                graceTimeMillis);
-          } catch (NessieNotFoundException | NessieConflictException e) {
-            LOGGER.error("Failed to expire snapshots for {}", tableInformation);
-            output.add(
-                resultRow(
-                    timestamp,
-                    tableInformation,
-                    null,
-                    "FAILURE: " + e,
-                    null,
-                    false,
-                    null,
-                    null,
-                    null));
-          }
+      for (ContentAndLiveSnapshots cmp : content.values()) {
+        TableInformation tableInformation =
+            new TableInformation(cmp.contentId, cmp.tableIdent, cmp.liveAtRefName, cmp.liveAtHash);
+        Timestamp timestamp = Timestamp.from(Instant.now());
+        try {
+          expireForTable(
+              nessieCatalog,
+              timestamp,
+              tableInformation,
+              cmp.liveSnapshotIds,
+              expireBranch,
+              output::add,
+              doExpire,
+              graceTimeMillis);
+        } catch (NessieNotFoundException | NessieConflictException e) {
+          LOGGER.error("Failed to expire snapshots for {}", tableInformation);
+          output.add(
+              resultRow(
+                  timestamp,
+                  tableInformation,
+                  null,
+                  "FAILURE: " + e,
+                  null,
+                  false,
+                  null,
+                  null,
+                  null));
         }
       }
 
@@ -276,32 +280,6 @@ public class ExpireSnapshotsProcedure extends AbstractGcProcedure {
       Map<String, String> catalogConf =
           AbstractGcProcedure.catalogConfWithRef(spark(), getCatalog(), null);
       catalogImpl.initialize(getCatalog(), new CaseInsensitiveStringMap(catalogConf));
-    }
-  }
-
-  static final class TableInformation {
-    final String contentId;
-    final String tableName;
-    final String refName;
-    final String refHash;
-    final ContentKey key;
-
-    TableInformation(String contentId, String tableName, String refName, String refHash) {
-      this.contentId = contentId;
-      this.tableName = tableName;
-      this.refName = refName;
-      this.refHash = refHash;
-      this.key = toKey(tableName);
-    }
-
-    String expireTableName() {
-      return contentId.replaceAll("-", "_");
-    }
-
-    @Override
-    public String toString() {
-      return String.format(
-          "content-id %s accessible as '%s' via %s at %s", contentId, tableName, refName, refHash);
     }
   }
 
@@ -426,6 +404,8 @@ public class ExpireSnapshotsProcedure extends AbstractGcProcedure {
     Table table;
     ensureBranchExists(nessieCatalog, expireBranch, true, "Iceberg-expire-snapshots actions");
 
+    // TODO: already checked this while deciding expireUnmodifiableTable by commitAtSource, pass the
+    // table here ?
     Optional<IcebergTable> icebergTable =
         Optional.ofNullable(
                 nessieCatalog
@@ -466,7 +446,7 @@ public class ExpireSnapshotsProcedure extends AbstractGcProcedure {
           doExpire);
     } else {
       String failureMessage = String.format("Could not find IcebergTable %s", tableInformation);
-
+      // TODO: why this behavior ? if table not found it is drop table flow ? throw exception ?
       result.accept(
           resultRow(
               timestamp, tableInformation, false, failureMessage, null, false, null, null, null));
@@ -489,7 +469,8 @@ public class ExpireSnapshotsProcedure extends AbstractGcProcedure {
                       .get(tableInformation.key))
               .flatMap(c -> c.unwrap(IcebergTable.class));
       // If the table is reachable via the HEAD of the branch, perform expireTable on the HEAD of
-      // that branch (return true), otherwise there's a conflicting commit (return false).
+      // that branch (return true), otherwise there's a conflicting commit  (table is dropped) so
+      // return false.
       return icebergTable.isPresent()
           && icebergTable.get().getId().equals(tableInformation.contentId);
     } else {
@@ -509,5 +490,53 @@ public class ExpireSnapshotsProcedure extends AbstractGcProcedure {
     identifiers.add(tableIdentifier.name());
 
     return ContentKey.of(identifiers);
+  }
+
+  static final class TableInformation {
+    final String contentId;
+    final String tableName;
+    final String refName;
+    final String refHash;
+    final ContentKey key;
+
+    TableInformation(String contentId, String tableName, String refName, String refHash) {
+      this.contentId = contentId;
+      this.tableName = tableName;
+      this.refName = refName;
+      this.refHash = refHash;
+      this.key = toKey(tableName);
+    }
+
+    String expireTableName() {
+      return contentId.replaceAll("-", "_");
+    }
+
+    @Override
+    public String toString() {
+      return String.format(
+          "content-id %s accessible as '%s' via %s at %s", contentId, tableName, refName, refHash);
+    }
+  }
+
+  static final class ContentAndLiveSnapshots {
+
+    final String contentId;
+    final LongHashSet liveSnapshotIds;
+    final String liveAtRefName;
+    final String liveAtHash;
+    final String tableIdent;
+
+    public ContentAndLiveSnapshots(
+        String contentId,
+        LongHashSet liveSnapshotIds,
+        String liveAtRefName,
+        String liveAtHash,
+        String tableIdent) {
+      this.contentId = contentId;
+      this.liveSnapshotIds = liveSnapshotIds;
+      this.liveAtRefName = liveAtRefName;
+      this.liveAtHash = liveAtHash;
+      this.tableIdent = tableIdent;
+    }
   }
 }
