@@ -20,6 +20,7 @@ import static org.projectnessie.model.Operation.Put;
 
 import java.security.AccessControlException;
 import java.security.Principal;
+import java.time.Clock;
 import javax.annotation.Nullable;
 import org.projectnessie.api.params.CommitLogParams;
 import org.projectnessie.api.params.EntriesParams;
@@ -57,6 +58,15 @@ public class TreeApiImplWithAuthorization extends TreeApiImpl {
       AccessChecker accessChecker,
       Principal principal) {
     super(config, store, accessChecker, principal);
+  }
+
+  public TreeApiImplWithAuthorization(
+      ServerConfig config,
+      VersionStore<Content, CommitMeta, Type> store,
+      AccessChecker accessChecker,
+      Principal principal,
+      Clock clock) {
+    super(config, store, accessChecker, principal, clock);
   }
 
   @Override

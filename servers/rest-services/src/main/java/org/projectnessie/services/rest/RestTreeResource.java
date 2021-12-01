@@ -15,6 +15,7 @@
  */
 package org.projectnessie.services.rest;
 
+import java.time.Clock;
 import javax.enterprise.context.RequestScoped;
 import javax.inject.Inject;
 import javax.ws.rs.core.Context;
@@ -40,6 +41,7 @@ import org.projectnessie.model.ReferencesResponse;
 import org.projectnessie.model.Transplant;
 import org.projectnessie.services.authz.AccessChecker;
 import org.projectnessie.services.config.ServerConfig;
+import org.projectnessie.services.impl.TreeApiImpl;
 import org.projectnessie.services.impl.TreeApiImplWithAuthorization;
 import org.projectnessie.versioned.VersionStore;
 
@@ -54,6 +56,7 @@ public class RestTreeResource implements HttpTreeApi {
   private final ServerConfig config;
   private final VersionStore<Content, CommitMeta, Type> store;
   private final AccessChecker accessChecker;
+  private final Clock clock;
 
   @Context SecurityContext securityContext;
 
@@ -67,17 +70,34 @@ public class RestTreeResource implements HttpTreeApi {
       ServerConfig config,
       VersionStore<Content, CommitMeta, Type> store,
       AccessChecker accessChecker) {
+    this(config, store, accessChecker, Clock.systemUTC());
+  }
+
+  public RestTreeResource(
+      ServerConfig config,
+      VersionStore<Content, CommitMeta, Type> store,
+      AccessChecker accessChecker,
+      Clock clock) {
     this.config = config;
     this.store = store;
     this.accessChecker = accessChecker;
+    this.clock = clock;
   }
 
   private TreeApi resource() {
-    return new TreeApiImplWithAuthorization(
-        config,
-        store,
-        accessChecker,
-        securityContext == null ? null : securityContext.getUserPrincipal());
+    return accessChecker != null
+        ? new TreeApiImplWithAuthorization(
+            config,
+            store,
+            accessChecker,
+            securityContext == null ? null : securityContext.getUserPrincipal(),
+            clock)
+        : new TreeApiImpl(
+            config,
+            store,
+            null,
+            securityContext == null ? null : securityContext.getUserPrincipal(),
+            clock);
   }
 
   @Override
