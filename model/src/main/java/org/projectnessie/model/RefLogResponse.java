@@ -41,6 +41,10 @@ public interface RefLogResponse extends PaginatedResponse {
       return ImmutableRefLogResponseEntry.builder();
     }
 
+    // maps to getRefType() output
+    String BRANCH = "Branch";
+    String TAG = "Tag";
+
     /** Reflog id of the current entry. */
     @NotNull
     String getRefLogId();

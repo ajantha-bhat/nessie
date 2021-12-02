@@ -162,6 +162,11 @@
       <artifactId>nessie-spark-extensions</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <dependency>
+      <groupId>org.projectnessie</groupId>
+      <artifactId>nessie-gc-base</artifactId>
+      <version>${project.version}</version>
+    </dependency>
   </dependencies>
 
   <build>
