@@ -102,12 +102,16 @@ public final class StreamingUtil {
       @Nullable String hashOnRef,
       @Nullable String untilHash,
       @Nullable String queryExpression,
-      OptionalInt maxRecords)
+      OptionalInt maxRecords,
+      boolean fetchAdditionalInfo)
       throws NessieNotFoundException {
     return new ResultStreamPaginator<>(
             LogResponse::getLogEntries,
             (reference, pageSize, token) ->
-                builderWithPaging(api.getCommitLog(), pageSize, token)
+                builderWithPaging(
+                        api.getCommitLog().fetchAdditionalInfo(fetchAdditionalInfo),
+                        pageSize,
+                        token)
                     .refName(reference)
                     .hashOnRef(hashOnRef)
                     .queryExpression(queryExpression)
