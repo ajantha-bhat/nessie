@@ -37,6 +37,12 @@ final class HttpGetCommitLog extends BaseHttpOnReferenceRequest<GetCommitLogBuil
   }
 
   @Override
+  public GetCommitLogBuilder fetchUnreachableCommits(boolean fetchUnreachableCommits) {
+    params.fetchUnreachableCommits(fetchUnreachableCommits);
+    return this;
+  }
+
+  @Override
   public GetCommitLogBuilder untilHash(String untilHash) {
     params.startHash(untilHash);
     return this;

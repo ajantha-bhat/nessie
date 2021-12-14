@@ -103,13 +103,14 @@ public final class StreamingUtil {
       @Nullable String untilHash,
       @Nullable String queryExpression,
       OptionalInt maxRecords,
-      boolean fetchAdditionalInfo)
+      boolean fetchAdditionalInfo,
+      boolean fetchUnreachableCommits)
       throws NessieNotFoundException {
     return new ResultStreamPaginator<>(
             LogResponse::getLogEntries,
             (reference, pageSize, token) ->
                 builderWithPaging(
-                        api.getCommitLog().fetchAdditionalInfo(fetchAdditionalInfo),
+                        api.getCommitLog().fetchAdditionalInfo(fetchAdditionalInfo).fetchUnreachableCommits(fetchUnreachableCommits),
                         pageSize,
                         token)
                     .refName(reference)

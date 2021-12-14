@@ -118,16 +118,31 @@ public class TreeApiImpl extends BaseApiImpl implements TreeApi {
   public ReferencesResponse getAllReferences(ReferencesParams params) {
     Preconditions.checkArgument(params.pageToken() == null, "Paging not supported");
     ImmutableReferencesResponse.Builder resp = ReferencesResponse.builder();
-    try (Stream<ReferenceInfo<CommitMeta>> str =
-        getStore().getNamedRefs(getGetNamedRefsParams(params.isFetchAdditionalInfo()))) {
-      Stream<Reference> unfiltered =
+    if (params.isFetchOnlyUnreachableReferences()) {
+      try (Stream<ReferenceInfo<CommitMeta>> str =
+        getStore().getNamedRefs(getGetNamedRefsParamsForUnreachable())) {
+
+        Stream<Reference> unfiltered =
           str.map(refInfo -> TreeApiImpl.makeReference(refInfo, params.isFetchAdditionalInfo()));
-      Stream<Reference> filtered = filterReferences(unfiltered, params.queryExpression());
-      filtered.forEach(resp::addReferences);
-    } catch (ReferenceNotFoundException e) {
-      throw new IllegalArgumentException(
+        Stream<Reference> filtered = filterReferences(unfiltered, params.queryExpression());
+        filtered.forEach(resp::addReferences);
+      } catch (ReferenceNotFoundException e) {
+        throw new IllegalArgumentException(
           String.format(
-              "Could not find default branch '%s'.", this.getConfig().getDefaultBranch()));
+            "Could not find default branch '%s'.", this.getConfig().getDefaultBranch()));
+      }
+    } else {
+      try (Stream<ReferenceInfo<CommitMeta>> str =
+        getStore().getNamedRefs(getGetNamedRefsParams(params.isFetchAdditionalInfo()))) {
+        Stream<Reference> unfiltered =
+          str.map(refInfo -> TreeApiImpl.makeReference(refInfo, params.isFetchAdditionalInfo()));
+        Stream<Reference> filtered = filterReferences(unfiltered, params.queryExpression());
+        filtered.forEach(resp::addReferences);
+      } catch (ReferenceNotFoundException e) {
+        throw new IllegalArgumentException(
+          String.format(
+            "Could not find default branch '%s'.", this.getConfig().getDefaultBranch()));
+      }
     }
     return resp.build();
   }
@@ -140,6 +155,14 @@ public class TreeApiImpl extends BaseApiImpl implements TreeApi {
             .tagRetrieveOptions(RetrieveOptions.COMMIT_META)
             .build()
         : GetNamedRefsParams.DEFAULT;
+  }
+
+  private GetNamedRefsParams getGetNamedRefsParamsForUnreachable() {
+    return GetNamedRefsParams.builder()
+      .branchRetrieveOptions(RetrieveOptions.UNREACHABLE)
+      .tagRetrieveOptions(RetrieveOptions.UNREACHABLE)
+      .build();
+      // TODO: Add options for fetchAdditionalInfo + unreachable
   }
 
   /**
@@ -294,7 +317,7 @@ public class TreeApiImpl extends BaseApiImpl implements TreeApi {
     // we should only allow named references when no paging is defined
     Ref endRef =
         namedRefWithHashOrThrow(
-                namedRef, null == params.pageToken() ? params.endHash() : params.pageToken())
+                namedRef, null == params.pageToken() ? params.endHash() : params.pageToken(), params)
             .getHash();
 
     try (Stream<Commit<CommitMeta, Content>> commits =

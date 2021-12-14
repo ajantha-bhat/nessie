@@ -27,6 +27,9 @@ public interface GetNamedRefsParams {
 
   GetNamedRefsParams DEFAULT = builder().build();
 
+  GetNamedRefsParams UNREACHABLE_DEFAULT =
+    builder().branchRetrieveOptions(RetrieveOptions.builder().isFetchUnreachableReferences(true).build()).build();
+
   static ImmutableGetNamedRefsParams.Builder builder() {
     return ImmutableGetNamedRefsParams.builder();
   }
@@ -65,6 +68,9 @@ public interface GetNamedRefsParams {
     /** Constant to retrieve the HEAD commit hash plus the commit-meta of the HEAD commit. */
     RetrieveOptions COMMIT_META =
         RetrieveOptions.builder().isRetrieveCommitMetaForHead(true).build();
+
+    /** Constant to retrieve unreachable reference. */
+    RetrieveOptions UNREACHABLE = RetrieveOptions.builder().isFetchUnreachableReferences(true).build();
 
     /**
      * Constant to retrieve the HEAD commit hash, the commit-meta of the HEAD commit, the
@@ -109,6 +115,12 @@ public interface GetNamedRefsParams {
      */
     @Value.Default
     default boolean isRetrieveCommitMetaForHead() {
+      return false;
+    }
+
+    /** Whether to fetch only the unreachable contents, defaults to {@code false}. */
+    @Value.Default
+    default boolean isFetchUnreachableReferences() {
       return false;
     }
   }

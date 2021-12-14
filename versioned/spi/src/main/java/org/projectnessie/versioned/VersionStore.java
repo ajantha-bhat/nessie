@@ -76,6 +76,8 @@ public interface VersionStore<VALUE, METADATA, VALUE_TYPE extends Enum<VALUE_TYP
    */
   WithHash<Ref> toRef(@Nonnull String refOfUnknownType) throws ReferenceNotFoundException;
 
+  WithHash<Ref> toRef(@Nonnull String refOfUnknownType, @Nonnull GetNamedRefsParams params) throws ReferenceNotFoundException;
+
   /**
    * Create a new commit and add to a branch.
    *

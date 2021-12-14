@@ -28,6 +28,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.projectnessie.client.StreamingUtil;
 import org.projectnessie.client.api.NessieApiV1;
+import org.projectnessie.error.NessieConflictException;
 import org.projectnessie.error.NessieNotFoundException;
 import org.projectnessie.model.Branch;
 import org.projectnessie.model.CommitMeta;
@@ -77,6 +78,20 @@ final class GCImpl implements GC {
 
     List<Reference> references = api.getAllReferences().get().getReferences();
     for (Reference reference : references) {
+      if (reference.getName().equals("main")) {
+        try {
+          api.deleteBranch().branch((Branch) reference).delete();
+          break;
+        } catch (NessieConflictException e) {
+          e.printStackTrace();
+        } catch (NessieNotFoundException e) {
+          e.printStackTrace();
+        }
+      }
+    }
+
+    references = api.getAllReferences().fetchOnlyUnreachableReferences(true).get().getReferences();
+    for (Reference reference : references) {
       Instant cutOffTimestamp = this.cutOffTimestamp.apply(reference);
       walkReference(
           contentValuesCollector,
@@ -95,7 +110,7 @@ final class GCImpl implements GC {
       Predicate<CommitMeta> expiredCommitPredicate) {
     try (Stream<LogResponse.LogEntry> commits =
         StreamingUtil.getCommitLogStream(
-            api, reference.getName(), null, null, null, OptionalInt.empty(), true)) {
+            api, reference.getName(), null, null, null, OptionalInt.empty(), true, true)) {
 
       Set<ContentKey> deletedKeys = new HashSet<>();
       AtomicBoolean commitHead = new AtomicBoolean(true);

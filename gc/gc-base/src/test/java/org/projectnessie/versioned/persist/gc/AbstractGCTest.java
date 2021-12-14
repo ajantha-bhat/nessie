@@ -83,13 +83,7 @@ abstract class AbstractGCTest {
   static List<Dataset> produceDatasetsSource(Function<String, Dataset> datasetFactory) {
     // add each test scenario as one dataset below.
     return asList(
-        testSingleTableSingleRef(datasetFactory.apply("testSingleTableSingleRef")),
-        testSingleTableMultipleRef(datasetFactory.apply("testSingleTableMultipleRef")),
-        testDropTableSingleRef(datasetFactory.apply("testDropTableSingleRef")),
-        testMultipleTableMultipleRef(datasetFactory.apply("testMultipleTableMultipleRef")),
-        testPerRefCutoffTime(datasetFactory.apply("testPerRefCutoffTime")),
-        testTableRename(datasetFactory.apply("testTableRename")),
-        testMixedContentTypes(datasetFactory.apply("testMixedContentTypes")));
+        testMultipleTableMultipleRef(datasetFactory.apply("testMultipleTableMultipleRef")));
   }
 
   // Note: If the content is expected to be expired after the gc (by applying GC algorithm), we are
