@@ -35,6 +35,13 @@ public interface GetAllReferencesBuilder
   GetAllReferencesBuilder fetchAdditionalInfo(boolean fetchAdditionalInfo);
 
   /**
+   * will fetch the unreachable references (dropped or reassigned references) from the backend store
+   *
+   * @return {@link GetAllReferencesBuilder}
+   */
+  GetAllReferencesBuilder fetchOnlyUnreachableReferences(boolean fetchOnlyUnreachableReferences);
+
+  /**
    * Fetches all references and returns them in a {@link ReferencesResponse} instance.
    *
    * @return Fetches all references and returns them in a {@link ReferencesResponse} instance.

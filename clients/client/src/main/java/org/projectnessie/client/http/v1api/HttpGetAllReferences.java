@@ -53,6 +53,13 @@ final class HttpGetAllReferences extends BaseHttpRequest implements GetAllRefere
   }
 
   @Override
+  public GetAllReferencesBuilder fetchOnlyUnreachableReferences(
+      boolean fetchOnlyUnreachableReferences) {
+    params.fetchOnlyUnreachableReferences(fetchOnlyUnreachableReferences);
+    return this;
+  }
+
+  @Override
   public ReferencesResponse get() {
     return client.getTreeApi().getAllReferences(params.build());
   }

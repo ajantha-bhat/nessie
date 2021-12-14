@@ -75,8 +75,18 @@ public class CommitLogParams extends AbstractParams {
   @QueryParam("fetchAdditionalInfo")
   private boolean fetchAdditionalInfo;
 
+  @Parameter(
+    description =
+      "If set to true, will fetch unreachable commits from unreachable reference")
+  @QueryParam("fetchUnreachableCommits")
+  private boolean fetchUnreachableCommits;
+
   public boolean isFetchAdditionalInfo() {
     return fetchAdditionalInfo;
+  }
+
+  public boolean isFetchUnreachableCommits() {
+    return fetchUnreachableCommits;
   }
 
   public CommitLogParams() {}
@@ -87,12 +97,14 @@ public class CommitLogParams extends AbstractParams {
       Integer maxRecords,
       String pageToken,
       String queryExpression,
-      boolean fetchAdditionalInfo) {
+      boolean fetchAdditionalInfo,
+      boolean fetchUnreachableCommits) {
     super(maxRecords, pageToken);
     this.startHash = startHash;
     this.endHash = endHash;
     this.queryExpression = queryExpression;
     this.fetchAdditionalInfo = fetchAdditionalInfo;
+    this.fetchUnreachableCommits = fetchUnreachableCommits;
   }
 
   private CommitLogParams(Builder builder) {
@@ -102,7 +114,8 @@ public class CommitLogParams extends AbstractParams {
         builder.maxRecords,
         builder.pageToken,
         builder.queryExpression,
-        builder.fetchAdditionalInfo);
+        builder.fetchAdditionalInfo,
+        builder.fetchUnreachableCommits);
   }
 
   @Nullable
@@ -136,6 +149,7 @@ public class CommitLogParams extends AbstractParams {
         .add("pageToken='" + pageToken() + "'")
         .add("queryExpression='" + queryExpression + "'")
         .add("fetchAdditionalInfo='" + fetchAdditionalInfo + "'")
+        .add("fetchAdditionalInfo='" + fetchUnreachableCommits + "'")
         .toString();
   }
 
@@ -153,13 +167,14 @@ public class CommitLogParams extends AbstractParams {
         && Objects.equals(maxRecords(), that.maxRecords())
         && Objects.equals(pageToken(), that.pageToken())
         && Objects.equals(queryExpression, that.queryExpression)
-        && Objects.equals(fetchAdditionalInfo, that.fetchAdditionalInfo);
+        && Objects.equals(fetchAdditionalInfo, that.fetchAdditionalInfo)
+        && Objects.equals(fetchUnreachableCommits, that.fetchUnreachableCommits);
   }
 
   @Override
   public int hashCode() {
     return Objects.hash(
-        startHash, endHash, maxRecords(), pageToken(), queryExpression, fetchAdditionalInfo);
+        startHash, endHash, maxRecords(), pageToken(), queryExpression, fetchAdditionalInfo, fetchUnreachableCommits);
   }
 
   public static class Builder extends AbstractParams.Builder<Builder> {
@@ -168,6 +183,7 @@ public class CommitLogParams extends AbstractParams {
     private String endHash;
     private String queryExpression;
     private boolean fetchAdditionalInfo;
+    private boolean fetchUnreachableCommits;
 
     private Builder() {}
 
@@ -191,13 +207,19 @@ public class CommitLogParams extends AbstractParams {
       return this;
     }
 
+    public Builder fetchUnreachableCommits(boolean fetchUnreachableCommits) {
+      this.fetchUnreachableCommits = fetchUnreachableCommits;
+      return this;
+    }
+
     public Builder from(CommitLogParams params) {
       return startHash(params.startHash)
           .endHash(params.endHash)
           .maxRecords(params.maxRecords())
           .pageToken(params.pageToken())
           .expression(params.queryExpression)
-          .fetchAdditionalInfo(params.fetchAdditionalInfo);
+          .fetchAdditionalInfo(params.fetchAdditionalInfo)
+        .fetchUnreachableCommits(params.fetchUnreachableCommits);
     }
 
     private void validate() {}

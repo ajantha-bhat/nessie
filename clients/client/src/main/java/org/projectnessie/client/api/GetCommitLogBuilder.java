@@ -38,6 +38,9 @@ public interface GetCommitLogBuilder
    */
   GetCommitLogBuilder fetchAdditionalInfo(boolean fetchAdditionalInfo);
 
+
+  GetCommitLogBuilder fetchUnreachableCommits(boolean fetchUnreachableCommits);
+
   GetCommitLogBuilder untilHash(
       @Nullable @Pattern(regexp = Validation.HASH_REGEX, message = Validation.HASH_MESSAGE)
           String untilHash);

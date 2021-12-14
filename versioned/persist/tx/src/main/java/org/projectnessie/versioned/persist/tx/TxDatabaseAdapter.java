@@ -154,7 +154,13 @@ public abstract class TxDatabaseAdapter
 
     Connection conn = borrowConnection();
     try {
-      ReferenceInfo<ByteString> refInfo = fetchNamedRef(conn, ref);
+      ReferenceInfo<ByteString> refInfo;
+      if (params.getBranchRetrieveOptions() != null && params.getBranchRetrieveOptions().isFetchUnreachableReferences()) {
+        refInfo = fetchUnreachableNamedRef(conn, ref);
+      } else {
+        refInfo = fetchNamedRef(conn, ref);
+      }
+
       Hash defaultBranchHead = namedRefsDefaultBranchHead(conn, params);
 
       Stream<ReferenceInfo<ByteString>> refs = Stream.of(refInfo);
@@ -176,15 +182,19 @@ public abstract class TxDatabaseAdapter
     Connection conn = borrowConnection();
     boolean failed = true;
     try {
+      Stream<ReferenceInfo<ByteString>> refs;
+      if (params.getBranchRetrieveOptions() != null && params.getBranchRetrieveOptions().isFetchUnreachableReferences()) {
+        refs = fetchUnreachableNamedRefs(conn);
+        failed = false;
+      } else {
+        Hash defaultBranchHead = namedRefsDefaultBranchHead(conn, params);
 
-      Hash defaultBranchHead = namedRefsDefaultBranchHead(conn, params);
+        refs = fetchNamedRefs(conn);
 
-      Stream<ReferenceInfo<ByteString>> refs = fetchNamedRefs(conn);
+        refs = namedRefsFilterAndEnhance(conn, params, defaultBranchHead, refs);
 
-      refs = namedRefsFilterAndEnhance(conn, params, defaultBranchHead, refs);
-
-      failed = false;
-
+        failed = false;
+      }
       return refs.onClose(() -> releaseConnection(conn));
     } finally {
       if (failed) {
@@ -360,6 +370,14 @@ public abstract class TxDatabaseAdapter
           false,
           (conn, pointer) -> {
             verifyExpectedHash(pointer, reference, expectedHead);
+
+            try (PreparedStatement ps =
+                conn.prepareStatement(SqlStatements.INSERT_UNREACHABLE_NAMED_REFERENCE)) {
+              ps.setString(1, config.getRepositoryId());
+              ps.setString(2, reference.getName());
+              ps.executeUpdate(); // TODO: Need to collect the results and throw exception if
+              // fails ?
+            }
 
             try (PreparedStatement ps =
                 conn.prepareStatement(SqlStatements.DELETE_NAMED_REFERENCE)) {
@@ -700,21 +718,31 @@ public abstract class TxDatabaseAdapter
   }
 
   protected Stream<ReferenceInfo<ByteString>> fetchNamedRefs(Connection conn) {
-    return JdbcSelectSpliterator.buildStream(
-        conn,
-        SqlStatements.SELECT_NAMED_REFERENCES,
-        ps -> ps.setString(1, config.getRepositoryId()),
-        (rs) -> {
-          String type = rs.getString(1);
-          String ref = rs.getString(2);
-          Hash head = Hash.of(rs.getString(3));
+    return fetchNamedRefsData(conn, SqlStatements.SELECT_NAMED_REFERENCES);
+  }
 
-          NamedRef namedRef = namedRefFromRow(type, ref);
-          if (namedRef != null) {
-            return ReferenceInfo.of(head, namedRef);
-          }
-          return null;
-        });
+  protected Stream<ReferenceInfo<ByteString>> fetchUnreachableNamedRefs(Connection conn) {
+    return fetchNamedRefsData(conn, SqlStatements.SELECT_UNREACHABLE_NAMED_REFERENCES);
+  }
+
+  private Stream<ReferenceInfo<ByteString>> fetchNamedRefsData(
+    Connection conn,
+    String selectUnreachableNamedReferences) {
+    return JdbcSelectSpliterator.buildStream(
+      conn,
+      selectUnreachableNamedReferences,
+      ps -> ps.setString(1, config.getRepositoryId()),
+      (rs) -> {
+        String type = rs.getString(1);
+        String ref = rs.getString(2);
+        Hash head = Hash.of(rs.getString(3));
+
+        NamedRef namedRef = namedRefFromRow(type, ref);
+        if (namedRef != null) {
+          return ReferenceInfo.of(head, namedRef);
+        }
+        return null;
+      });
   }
 
   /** Similar to {@link #fetchNamedRefHead(Connection, NamedRef)}, but just checks for existence. */
@@ -763,6 +791,24 @@ public abstract class TxDatabaseAdapter
   protected ReferenceInfo<ByteString> fetchNamedRef(Connection c, String ref)
       throws ReferenceNotFoundException {
     try (PreparedStatement ps = c.prepareStatement(SqlStatements.SELECT_NAMED_REFERENCE_ANY)) {
+      ps.setString(1, config.getRepositoryId());
+      ps.setString(2, ref);
+      try (ResultSet rs = ps.executeQuery()) {
+        if (rs.next()) {
+          Hash hash = Hash.of(rs.getString(2));
+          NamedRef namedRef = namedRefFromRow(rs.getString(1), ref);
+          return ReferenceInfo.of(hash, namedRef);
+        }
+        throw referenceNotFound(ref);
+      }
+    } catch (SQLException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  protected ReferenceInfo<ByteString> fetchUnreachableNamedRef(Connection c, String ref)
+    throws ReferenceNotFoundException {
+    try (PreparedStatement ps = c.prepareStatement(SqlStatements.SELECT_UNREACHABLE_NAMED_REFERENCE_ANY)) {
       ps.setString(1, config.getRepositoryId());
       ps.setString(2, ref);
       try (ResultSet rs = ps.executeQuery()) {
@@ -1240,6 +1286,9 @@ public abstract class TxDatabaseAdapter
         .put(
             SqlStatements.TABLE_NAMED_REFERENCES,
             Collections.singletonList(SqlStatements.CREATE_TABLE_NAMED_REFERENCES))
+        .put(
+            SqlStatements.TABLE_UNREACHABLE_NAMED_REFERENCES,
+            Collections.singletonList(SqlStatements.CREATE_TABLE_UNREACHABLE_NAMED_REFERENCES))
         .put(
             SqlStatements.TABLE_COMMIT_LOG,
             Collections.singletonList(SqlStatements.CREATE_TABLE_COMMIT_LOG))

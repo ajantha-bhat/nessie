@@ -53,6 +53,30 @@ public final class SqlStatements {
               + ")",
           TABLE_NAMED_REFERENCES);
 
+  public static final String TABLE_UNREACHABLE_NAMED_REFERENCES = "unreachable_named_refs";
+  public static final String CREATE_TABLE_UNREACHABLE_NAMED_REFERENCES =
+      String.format(
+          "CREATE TABLE %s (\n"
+              + "  repo_id {2},\n"
+              + "  ref {4},\n"
+              + "  ref_type {5},\n"
+              + "  hash {1},\n"
+              + "  PRIMARY KEY (hash)\n"
+              + ")",
+          TABLE_UNREACHABLE_NAMED_REFERENCES);
+
+  public static final String INSERT_UNREACHABLE_NAMED_REFERENCE =
+      String.format(
+          "INSERT INTO %s SELECT * FROM %s WHERE repo_id = ? AND ref = ?",
+          TABLE_UNREACHABLE_NAMED_REFERENCES, TABLE_NAMED_REFERENCES);
+
+  public static final String SELECT_UNREACHABLE_NAMED_REFERENCES =
+    String.format("SELECT ref_type, ref, hash FROM %s WHERE repo_id = ?", TABLE_UNREACHABLE_NAMED_REFERENCES);
+
+  public static final String SELECT_UNREACHABLE_NAMED_REFERENCE_ANY =
+    String.format(
+      "SELECT ref_type, hash FROM %s WHERE repo_id = ? AND ref = ?", TABLE_UNREACHABLE_NAMED_REFERENCES);
+
   public static final String TABLE_GLOBAL_STATE = "global_state";
   public static final String DELETE_GLOBAL_STATE_ALL =
       String.format("DELETE FROM %s WHERE repo_id = ?", TABLE_GLOBAL_STATE);

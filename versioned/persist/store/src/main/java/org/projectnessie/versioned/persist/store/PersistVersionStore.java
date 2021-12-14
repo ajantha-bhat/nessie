@@ -88,6 +88,12 @@ public class PersistVersionStore<CONTENT, METADATA, CONTENT_TYPE extends Enum<CO
   }
 
   @Override
+  public WithHash<Ref> toRef(@Nonnull String refOfUnknownType, @Nonnull GetNamedRefsParams params) throws ReferenceNotFoundException {
+    ReferenceInfo<METADATA> refInfo = getNamedRef(refOfUnknownType, params);
+    return WithHash.of(refInfo.getHash(), refInfo.getNamedRef());
+  }
+
+  @Override
   public Hash commit(
       @Nonnull BranchName branch,
       @Nonnull Optional<Hash> expectedHead,

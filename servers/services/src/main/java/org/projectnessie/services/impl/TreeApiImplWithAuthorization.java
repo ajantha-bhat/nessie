@@ -155,7 +155,7 @@ public class TreeApiImplWithAuthorization extends TreeApiImpl {
       getAccessChecker()
           .canListCommitLog(
               createAccessContext(),
-              namedRefWithHashOrThrow(namedRef, params.endHash()).getValue());
+            namedRefWithHashOrThrow(namedRef, params.endHash(), params).getValue());
     }
     return super.getCommitLog(namedRef, params);
   }

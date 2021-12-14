@@ -80,6 +80,11 @@ public final class MetricsVersionStore<VALUE, METADATA, VALUE_TYPE extends Enum<
   }
 
   @Override
+  public WithHash<Ref> toRef(@Nonnull String refOfUnknownType, @Nonnull GetNamedRefsParams params) throws ReferenceNotFoundException {
+    return delegate1Ex("toref", () -> delegate.toRef(refOfUnknownType, params));
+  }
+
+  @Override
   public Hash commit(
       @Nonnull BranchName branch,
       @Nonnull Optional<Hash> referenceHash,

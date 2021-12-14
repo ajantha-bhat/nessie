@@ -50,6 +50,7 @@ class HttpTreeClient implements HttpTreeApi {
         .queryParam("pageToken", params.pageToken())
         .queryParam("fetchAdditionalInfo", Boolean.toString(params.isFetchAdditionalInfo()))
         .queryParam("query_expression", params.queryExpression())
+        .queryParam("fetchOnlyUnreachableReferences", Boolean.toString(params.isFetchOnlyUnreachableReferences()))
         .get()
         .readEntity(ReferencesResponse.class);
   }
@@ -140,6 +141,7 @@ class HttpTreeClient implements HttpTreeApi {
         .queryParam("startHash", params.startHash())
         .queryParam("endHash", params.endHash())
         .queryParam("fetchAdditionalInfo", params.isFetchAdditionalInfo() ? "true" : null)
+        .queryParam("fetchUnreachableCommits", params.isFetchUnreachableCommits() ? "true" : null)
         .get()
         .readEntity(LogResponse.class);
   }

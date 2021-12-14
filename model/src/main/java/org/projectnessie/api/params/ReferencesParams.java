@@ -64,13 +64,23 @@ public class ReferencesParams extends AbstractParams {
   @Nullable
   private String queryExpression;
 
+  @Parameter(
+      description = "If set to true, will fetch the unreachable (dropped/reassigned) references.")
+  @QueryParam("fetchOnlyUnreachableReferences")
+  private boolean fetchOnlyUnreachableReferences;
+
   public ReferencesParams() {}
 
   private ReferencesParams(
-      Integer maxRecords, String pageToken, boolean fetchAdditionalInfo, String queryExpression) {
+      Integer maxRecords,
+      String pageToken,
+      boolean fetchAdditionalInfo,
+      String queryExpression,
+      boolean fetchOnlyUnreachableReferences) {
     super(maxRecords, pageToken);
     this.fetchAdditionalInfo = fetchAdditionalInfo;
     this.queryExpression = queryExpression;
+    this.fetchOnlyUnreachableReferences = fetchOnlyUnreachableReferences;
   }
 
   private ReferencesParams(Builder builder) {
@@ -78,7 +88,8 @@ public class ReferencesParams extends AbstractParams {
         builder.maxRecords,
         builder.pageToken,
         builder.fetchAdditionalInfo,
-        builder.queryExpression);
+        builder.queryExpression,
+        builder.fetchOnlyUnreachableReferences);
   }
 
   public boolean isFetchAdditionalInfo() {
@@ -87,6 +98,10 @@ public class ReferencesParams extends AbstractParams {
 
   public String queryExpression() {
     return queryExpression;
+  }
+
+  public boolean isFetchOnlyUnreachableReferences() {
+    return fetchOnlyUnreachableReferences;
   }
 
   public static ReferencesParams.Builder builder() {
@@ -104,6 +119,7 @@ public class ReferencesParams extends AbstractParams {
         .add("pageToken='" + pageToken() + "'")
         .add("fetchAdditionalInfo=" + fetchAdditionalInfo)
         .add("queryExpression=" + queryExpression)
+        .add("fetchOnlyUnreachableReferences=" + fetchOnlyUnreachableReferences)
         .toString();
   }
 
@@ -119,12 +135,18 @@ public class ReferencesParams extends AbstractParams {
     return Objects.equals(maxRecords(), that.maxRecords())
         && Objects.equals(pageToken(), that.pageToken())
         && Objects.equals(fetchAdditionalInfo, that.fetchAdditionalInfo)
-        && Objects.equals(queryExpression, that.queryExpression);
+        && Objects.equals(queryExpression, that.queryExpression)
+        && Objects.equals(fetchOnlyUnreachableReferences, that.fetchOnlyUnreachableReferences);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(maxRecords(), pageToken(), fetchAdditionalInfo, queryExpression);
+    return Objects.hash(
+        maxRecords(),
+        pageToken(),
+        fetchAdditionalInfo,
+        queryExpression,
+        fetchOnlyUnreachableReferences);
   }
 
   public static class Builder extends AbstractParams.Builder<Builder> {
@@ -134,11 +156,14 @@ public class ReferencesParams extends AbstractParams {
     private boolean fetchAdditionalInfo;
     private String queryExpression;
 
+    private boolean fetchOnlyUnreachableReferences = false;
+
     public ReferencesParams.Builder from(ReferencesParams params) {
       return maxRecords(params.maxRecords())
           .pageToken(params.pageToken())
           .fetchAdditionalInfo(params.fetchAdditionalInfo)
-          .expression(params.queryExpression);
+          .expression(params.queryExpression)
+          .fetchOnlyUnreachableReferences(params.fetchOnlyUnreachableReferences);
     }
 
     public Builder fetchAdditionalInfo(boolean fetchAdditionalInfo) {
@@ -148,6 +173,11 @@ public class ReferencesParams extends AbstractParams {
 
     public Builder expression(String queryExpression) {
       this.queryExpression = queryExpression;
+      return this;
+    }
+
+    public Builder fetchOnlyUnreachableReferences(boolean fetchOnlyUnreachableReferences) {
+      this.fetchOnlyUnreachableReferences = fetchOnlyUnreachableReferences;
       return this;
     }
 
