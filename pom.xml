@@ -21,7 +21,7 @@
 
   <groupId>org.projectnessie</groupId>
   <artifactId>nessie</artifactId>
-  <version>0.14.1-SNAPSHOT</version>
+  <version>0.20.2-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <name>Nessie</name>
@@ -84,16 +84,19 @@
       <name>Ajantha Bhat</name>
       <url>https://github.com/ajantha-bhat</url>
     </developer>
-    <developer>
-      <id>maheshsapkal</id>
-      <name>Mahesh Sapkal</name>
-      <url>https://github.com/maheshsapkal</url>
-    </developer>
   </developers>
   <contributors>
     <contributor>
+      <name>Herman Polloni</name>
+      <url>https://github.com/hpolloni</url>
+    </contributor>
+    <contributor>
       <name>Ryan Tse</name>
       <url>https://github.com/ryantse</url>
+    </contributor>
+    <contributor>
+      <name>Mahesh Sapkal</name>
+      <url>https://github.com/maheshsapkal</url>
     </contributor>
   </contributors>
 
@@ -112,6 +115,7 @@
     <module>model</module>
     <module>clients</module>
     <module>versioned</module>
+    <module>gc</module>
     <module>servers</module>
     <module>tools</module>
   </modules>
@@ -143,54 +147,61 @@
     <maven.compiler.release>8</maven.compiler.release>
     <argLine />
     <quarkus.native.builder-image>quay.io/quarkus/ubi-quarkus-native-image:21.3-java11</quarkus.native.builder-image>
+    <test.log.level>INFO</test.log.level>
 
     <!-- Version properties -->
     <antlr.version>4.9.3</antlr.version>
-    <assertj.version>3.21.0</assertj.version>
-    <awssdk.version>2.17.90</awssdk.version>
+    <assertj.version>3.22.0</assertj.version>
+    <awssdk.version>2.17.136</awssdk.version>
     <bouncycastle.version>1.66</bouncycastle.version>
-    <cel.version>0.2.2</cel.version>
+    <cel.version>0.2.4</cel.version>
+    <checkstyle.version>9.3</checkstyle.version>
     <!-- to fix circular dependencies with NessieClient, certain projects need to use the same Nessie version as Iceberg/Delta has -->
-    <client.nessie.version>0.9.2</client.nessie.version>
-    <deltalake.version>1.0.0-nessie</deltalake.version>
-    <dockerjava.version>3.2.12</dockerjava.version>
+    <client.nessie.version>0.18.0</client.nessie.version>
+    <deltalake.version>1.1.0-nessie</deltalake.version>
+    <dockerjava.version>3.2.13</dockerjava.version>
     <dynamodb.version>1.12.0</dynamodb.version>
+    <errorprone-slf4j.version>0.1.5</errorprone-slf4j.version>
     <flapdoodle.version>3.1.4</flapdoodle.version>
-    <gatling.maven.version>4.0.1</gatling.maven.version>
-    <gatling.version>3.7.2</gatling.version>
-    <google-java-format.version>1.13.0</google-java-format.version>
+    <gatling.maven.version>4.1.1</gatling.maven.version>
+    <gatling.version>3.7.5</gatling.version>
+    <google-error-prone.version>2.10.0</google-error-prone.version>
+    <google-java-format.version>1.14.0</google-java-format.version>
     <guava.version>31.0.1-jre</guava.version>
     <hadoop.version>3.3.1</hadoop.version>
-    <iceberg.version>0.12.1</iceberg.version>
-    <immutables.version>2.8.9-ea-1</immutables.version>
-    <jackson.version>2.13.0</jackson.version>
+    <iceberg.version>0.13.1</iceberg.version>
+    <immutables.version>2.9.0</immutables.version>
+    <jackson.version>2.13.1</jackson.version>
+    <jacoco.version>0.8.7</jacoco.version>
     <javax.version>4.0.1</javax.version>
     <javax.ws.rs.version>2.1.1</javax.ws.rs.version>
     <jersey.version>2.35</jersey.version>
     <jetty.version>9.4.31.v20200723</jetty.version>
     <jjwt.version>0.11.2</jjwt.version>
-    <jmh.version>1.33</jmh.version>
+    <jmh.version>1.34</jmh.version>
     <jsr305.version>3.0.2</jsr305.version>
     <junit.version>5.8.2</junit.version>
-    <logback.version>1.2.7</logback.version>
-    <mockito.version>4.1.0</mockito.version>
+    <logback.version>1.2.10</logback.version>
+    <mockito.version>4.3.1</mockito.version>
     <nessie.version>${project.version}</nessie.version>
-    <openapi.version>2.0</openapi.version>
-    <picocli.version>4.6.2</picocli.version>
+    <openapi.version>3.0</openapi.version>
+    <picocli.version>4.6.3</picocli.version>
     <prometheus.version>0.9.0</prometheus.version>
-    <protobuf.version>3.19.1</protobuf.version>
-    <quarkus.version>2.5.0.Final</quarkus.version>
-    <reactor.version>2020.0.13</reactor.version>
-    <rocksdb.version>6.26.1</rocksdb.version>
+    <protobuf.version>3.19.4</protobuf.version>
+    <quarkus.version>2.7.2.Final</quarkus.version>
+    <reactor.version>2020.0.16</reactor.version>
+    <rocksdb.version>6.28.2</rocksdb.version>
     <scala2.12.version>2.12.13</scala2.12.version>
-    <scala2.13.version>2.13.7</scala2.13.version>
+    <scala2.13.version>2.13.8</scala2.13.version>
     <serverless.version>1.5</serverless.version>
-    <slf4j.version>1.7.32</slf4j.version>
-    <spark3.jackson.version>2.13.0</spark3.jackson.version>
-    <spark3.version>3.1.2</spark3.version>
+    <slf4j.version>1.7.36</slf4j.version>
+    <soebes.itf.version>0.11.0</soebes.itf.version>
+    <spark3.jackson.version>2.13.1</spark3.jackson.version>
+    <spark31.version>3.2.1</spark31.version>
+    <spark32.version>3.2.1</spark32.version>
     <sqlite.version>1.0.392</sqlite.version>
     <surefire.version>3.0.0-M5</surefire.version>
-    <testcontainers.version>1.16.2</testcontainers.version>
+    <testcontainers.version>1.16.3</testcontainers.version>
     <weld.version>3.1.8.Final</weld.version>
   </properties>
 
@@ -358,6 +369,11 @@
         <version>${iceberg.version}</version>
       </dependency>
       <dependency>
+        <groupId>org.apache.iceberg</groupId>
+        <artifactId>iceberg-spark-runtime-3.2_2.12</artifactId>
+        <version>${iceberg.version}</version>
+      </dependency>
+      <dependency>
         <groupId>com.google.guava</groupId>
         <artifactId>guava</artifactId>
         <version>${guava.version}</version>
@@ -422,6 +438,16 @@
         <version>${jmh.version}</version>
       </dependency>
       <dependency>
+        <groupId>com.soebes.itf.jupiter.extension</groupId>
+        <artifactId>itf-jupiter-extension</artifactId>
+        <version>${soebes.itf.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.soebes.itf.jupiter.extension</groupId>
+        <artifactId>itf-assertj</artifactId>
+        <version>${soebes.itf.version}</version>
+      </dependency>
+      <dependency>
         <groupId>org.immutables</groupId>
         <artifactId>value</artifactId>
         <version>${immutables.version}</version>
@@ -458,8 +484,12 @@
       <dependency>
         <groupId>org.apache.spark</groupId>
         <artifactId>spark-core_2.12</artifactId>
-        <version>${spark3.version}</version>
+        <version>${spark31.version}</version>
         <exclusions>
+          <exclusion>
+            <groupId>commons-logging</groupId>
+            <artifactId>commons-logging</artifactId>
+          </exclusion>
           <exclusion>
             <groupId>log4j</groupId>
             <artifactId>log4j</artifactId>
@@ -477,7 +507,7 @@
       <dependency>
         <groupId>org.apache.spark</groupId>
         <artifactId>spark-sql_2.12</artifactId>
-        <version>${spark3.version}</version>
+        <version>${spark31.version}</version>
         <exclusions>
           <exclusion>
             <groupId>log4j</groupId>
@@ -521,6 +551,16 @@
         <artifactId>google-java-format</artifactId>
         <version>${google-java-format.version}</version>
       </dependency>
+      <dependency>
+        <groupId>com.google.errorprone</groupId>
+        <artifactId>error_prone_core</artifactId>
+        <version>${google-error-prone.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>jp.skypencil.errorprone.slf4j</groupId>
+        <artifactId>errorprone-slf4j</artifactId>
+        <version>${errorprone-slf4j.version}</version>
+      </dependency>
     </dependencies>
   </dependencyManagement>
 
@@ -528,6 +568,11 @@
     <pluginManagement>
       <plugins>
         <!-- org.apache.maven plugins first -->
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-wrapper-plugin</artifactId>
+          <version>3.1.0</version>
+        </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-assembly-plugin</artifactId>
@@ -551,7 +596,7 @@
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-compiler-plugin</artifactId>
-          <version>3.8.1</version>
+          <version>3.10.0</version>
           <configuration>
             <!-- without this, you get NPE rather than useful messages with Maven + JDK11 -->
             <forceJavacCompilerUse>true</forceJavacCompilerUse>
@@ -559,7 +604,7 @@
               <path>
                 <groupId>org.immutables</groupId>
                 <artifactId>value</artifactId>
-                <version>2.8.2</version>
+                <version>${immutables.version}</version>
               </path>
             </annotationProcessorPaths>
             <compilerArgs>
@@ -570,7 +615,7 @@
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-deploy-plugin</artifactId>
-          <version>3.0.0-M1</version>
+          <version>3.0.0-M2</version>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
@@ -590,17 +635,17 @@
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-jar-plugin</artifactId>
-          <version>3.2.0</version>
+          <version>3.2.2</version>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-javadoc-plugin</artifactId>
-          <version>3.3.1</version>
+          <version>3.3.2</version>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-site-plugin</artifactId>
-          <version>3.9.1</version>
+          <version>3.11.0</version>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
@@ -634,7 +679,7 @@
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-release-plugin</artifactId>
-          <version>3.0.0-M4</version>
+          <version>3.0.0-M5</version>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
@@ -644,14 +689,14 @@
             <dependency>
               <groupId>com.puppycrawl.tools</groupId>
               <artifactId>checkstyle</artifactId>
-              <version>9.2</version>
+              <version>${checkstyle.version}</version>
             </dependency>
           </dependencies>
         </plugin>
         <plugin>
           <groupId>com.diffplug.spotless</groupId>
           <artifactId>spotless-maven-plugin</artifactId>
-          <version>2.17.4</version>
+          <version>2.21.0</version>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
@@ -661,7 +706,7 @@
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-plugin-plugin</artifactId>
-          <version>3.6.2</version>
+          <version>3.6.4</version>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
@@ -679,9 +724,14 @@
           </configuration>
         </plugin>
         <plugin>
+          <groupId>com.soebes.itf.jupiter.extension</groupId>
+          <artifactId>itf-maven-plugin</artifactId>
+          <version>${soebes.itf.version}</version>
+        </plugin>
+        <plugin>
           <groupId>com.github.eirslett</groupId>
           <artifactId>frontend-maven-plugin</artifactId>
-          <version>1.12.0</version>
+          <version>1.12.1</version>
           <configuration>
             <installDirectory>${project.build.directory}</installDirectory>
             <nodeVersion>v16.2.0</nodeVersion>
@@ -705,7 +755,7 @@
         <plugin>
           <groupId>net.alchim31.maven</groupId>
           <artifactId>scala-maven-plugin</artifactId>
-          <version>4.5.4</version>
+          <version>4.5.6</version>
           <configuration>
             <sendJavaToScalac>false</sendJavaToScalac>
             <scalaVersion>${scala2.12.version}</scalaVersion>
@@ -729,12 +779,12 @@
         <plugin>
           <groupId>org.jacoco</groupId>
           <artifactId>jacoco-maven-plugin</artifactId>
-          <version>0.8.7</version>
+          <version>${jacoco.version}</version>
         </plugin>
         <plugin>
           <groupId>org.jboss.jandex</groupId>
           <artifactId>jandex-maven-plugin</artifactId>
-          <version>1.2.1</version>
+          <version>1.2.2</version>
         </plugin>
         <plugin>
           <groupId>io.quarkus</groupId>
@@ -744,7 +794,7 @@
         <plugin>
           <groupId>io.smallrye</groupId>
           <artifactId>smallrye-open-api-maven-plugin</artifactId>
-          <version>2.1.15</version>
+          <version>2.1.20</version>
         </plugin>
         <plugin>
           <groupId>org.xolstice.maven.plugins</groupId>
@@ -762,12 +812,12 @@
         <plugin>
           <groupId>org.codehaus.mojo</groupId>
           <artifactId>build-helper-maven-plugin</artifactId>
-          <version>3.2.0</version>
+          <version>3.3.0</version>
         </plugin>
         <plugin>
           <groupId>org.owasp</groupId>
           <artifactId>dependency-check-maven</artifactId>
-          <version>6.5.0</version>
+          <version>6.5.3</version>
         </plugin>
       </plugins>
     </pluginManagement>
@@ -877,9 +927,11 @@ limitations under the License.
           <includes>
             <include>src/**</include>
             <include>*</include>
-            <include>**/.mvn/**</include>
           </includes>
           <excludes>
+            <exclude>**/.mvn/**</exclude>
+            <exclude>mvnw</exclude>
+            <exclude>mvnw.cmd</exclude>
             <exclude>**/*.java</exclude>
             <exclude>**/*.scala</exclude>
             <!-- default excludes (minus some items) from https://github.com/mycila/license-maven-plugin/blob/61f65ac65bfc38246a15fb84083796c5e3afb053/license-maven-plugin/src/main/java/com/mycila/maven/plugin/license/Default.java -->
@@ -1018,6 +1070,7 @@ limitations under the License.
             <exclude>**/c.java</exclude>
             <exclude>**/swagger-ui/**</exclude>
             <exclude>**/gradlew</exclude>
+            <exclude>**/tsconfig.tsbuildinfo</exclude>
 
             <!-- by directory name -->
             <exclude>**/node_modules/**</exclude>
@@ -1073,6 +1126,13 @@ limitations under the License.
       </plugin>
       <plugin>
         <artifactId>maven-enforcer-plugin</artifactId>
+        <dependencies>
+          <dependency>
+            <groupId>de.skuzzle.enforcer</groupId>
+            <artifactId>restrict-imports-enforcer-rule</artifactId>
+            <version>2.0.0</version>
+          </dependency>
+        </dependencies>
         <executions>
           <execution>
             <id>avoid-bad-dependencies</id>
@@ -1092,6 +1152,10 @@ limitations under the License.
                     <exclude>log4j:log4j</exclude>
                   </excludes>
                 </bannedDependencies>
+                <RestrictImports>
+                  <reason>Use javax annotations instead of jetbrains</reason>
+                  <bannedImport>org.jetbrains.annotations.**</bannedImport>
+                </RestrictImports>
               </rules>
             </configuration>
           </execution>
@@ -1183,18 +1247,18 @@ limitations under the License.
             <configuration>
               <compilerArgs combine.children="append">
                 <arg>-XDcompilePolicy=simple</arg>
-                <arg>-Xplugin:ErrorProne</arg>
+                <arg>-Xplugin:ErrorProne -XepExcludedPaths:.*/target/generated-*sources/.*</arg>
               </compilerArgs>
               <annotationProcessorPaths combine.children="append">
                 <path>
                   <groupId>com.google.errorprone</groupId>
                   <artifactId>error_prone_core</artifactId>
-                  <version>2.9.0</version>
+                  <version>${google-error-prone.version}</version>
                 </path>
                 <path>
                   <groupId>jp.skypencil.errorprone.slf4j</groupId>
                   <artifactId>errorprone-slf4j</artifactId>
-                  <version>0.1.4</version>
+                  <version>${errorprone-slf4j.version}</version>
                 </path>
               </annotationProcessorPaths>
             </configuration>
@@ -1422,6 +1486,18 @@ limitations under the License.
       <build>
         <defaultGoal>clean install</defaultGoal>
       </build>
+    </profile>
+    <profile>
+      <id>skipOnSkipTests</id>
+      <activation>
+        <property>
+          <name>skipTests</name>
+          <value>true</value>
+        </property>
+      </activation>
+      <properties>
+        <skipITs>true</skipITs>
+      </properties>
     </profile>
   </profiles>
 </project>
