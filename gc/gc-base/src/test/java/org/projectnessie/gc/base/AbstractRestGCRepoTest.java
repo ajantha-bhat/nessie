@@ -43,7 +43,7 @@ public abstract class AbstractRestGCRepoTest extends AbstractRestGCTest {
     String catalogAndIdentifierWithReference =
         getCatalogAndIdentifierWithReference(catalogName, namespace, tableName, gcBranchName);
     getOrCreateEmptyBranch(getApi(), gcBranchName);
-    try (SparkSession sparkSession = getSparkSession()) {
+    try (SparkSession sparkSession = getSparkSession(getUri().toString())) {
       IdentifiedResultsRepo identifiedResultsRepo =
           new IdentifiedResultsRepo(sparkSession, catalogName, gcBranchName, identifier);
       try {

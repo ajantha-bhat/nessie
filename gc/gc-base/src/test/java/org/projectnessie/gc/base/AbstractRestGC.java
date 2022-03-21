@@ -90,7 +90,7 @@ public abstract class AbstractRestGC extends AbstractRest {
             });
   }
 
-  void performGc(
+  protected void performGc(
       String prefix,
       Instant cutoffTimeStamp,
       Map<String, Instant> cutOffTimeStampPerRef,
@@ -98,7 +98,7 @@ public abstract class AbstractRestGC extends AbstractRest {
       boolean disableCommitProtection,
       Instant deadReferenceCutoffTime) {
 
-    try (SparkSession sparkSession = getSparkSession()) {
+    try (SparkSession sparkSession = getSparkSession(getUri().toString())) {
       ImmutableGCParams.Builder builder = ImmutableGCParams.builder();
       final Map<String, String> options = new HashMap<>();
       options.put(CONF_NESSIE_URI, getUri().toString());
@@ -134,9 +134,9 @@ public abstract class AbstractRestGC extends AbstractRest {
     }
   }
 
-  SparkSession getSparkSession() {
+  protected SparkSession getSparkSession(String uri) {
     SparkConf conf = new SparkConf();
-    conf.set("spark.sql.catalog.nessie.uri", getUri().toString())
+    conf.set("spark.sql.catalog.nessie.uri", uri)
         .set("spark.sql.catalog.nessie.ref", "main")
         .set("spark.sql.catalog.nessie.warehouse", tempDir.toURI().toString())
         .set("spark.sql.catalog.nessie.catalog-impl", "org.apache.iceberg.nessie.NessieCatalog")
@@ -155,7 +155,7 @@ public abstract class AbstractRestGC extends AbstractRest {
     return spark;
   }
 
-  private void verify(
+  protected void verify(
       Dataset<Row> actual, List<Row> expectedRows, SparkSession session, StructType schema) {
     Dataset<Row> expected = session.createDataFrame(expectedRows, schema);
     Dataset<Row> dfActual = actual.select("referenceName", "contentId", "snapshotId");
