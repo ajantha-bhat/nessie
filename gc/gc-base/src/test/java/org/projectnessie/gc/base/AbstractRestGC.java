@@ -21,7 +21,6 @@ import static org.projectnessie.client.NessieConfigConstants.CONF_NESSIE_URI;
 import com.google.common.collect.ImmutableMap;
 import java.io.File;
 import java.sql.Timestamp;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.HashMap;
@@ -66,28 +65,34 @@ public abstract class AbstractRestGC extends AbstractRest {
         .getLogEntries();
   }
 
-  void fillExpectedContents(Branch branch, int numCommits, List<Row> expected)
-      throws NessieNotFoundException {
-    fetchLogEntries(branch, numCommits).stream()
-        .map(LogEntry::getOperations)
-        .filter(Objects::nonNull)
-        .flatMap(Collection::stream)
-        .filter(op -> op instanceof Put)
-        .forEach(
-            op -> {
-              IcebergTable content = (IcebergTable) ((Put) op).getContent();
-              // using only contentId, ref, snapshot id for validation
-              // as metadata location will change based on new global state.
-              expected.add(
-                  RowFactory.create(
-                      Timestamp.from(Instant.now()),
-                      "dummyRunId",
-                      content.getId(),
-                      null,
-                      content.getSnapshotId(),
-                      branch.getName(),
-                      null));
-            });
+  protected void fillExpectedContents(Branch branch, int numCommits, List<Row> expected) {
+    try {
+      fetchLogEntries(branch, numCommits).stream()
+          .map(LogEntry::getOperations)
+          .filter(Objects::nonNull)
+          .flatMap(Collection::stream)
+          .filter(op -> op instanceof Put)
+          .forEach(
+              op -> {
+                IcebergTable content = (IcebergTable) (((Put) op).getContent());
+                // using only contentId, ref, snapshot id for validation
+                // as metadata location will change based on new global state.
+                expected.add(
+                    RowFactory.create(
+                        Timestamp.from(Instant.now()),
+                        "dummyRunId",
+                        content.getId(),
+                        null,
+                        content.getSnapshotId(),
+                        branch.getName(),
+                        null,
+                        null,
+                        content.getMetadataLocation(),
+                        true));
+              });
+    } catch (NessieNotFoundException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   protected void performGc(
@@ -95,17 +100,12 @@ public abstract class AbstractRestGC extends AbstractRest {
       Instant cutoffTimeStamp,
       Map<String, Instant> cutOffTimeStampPerRef,
       List<Row> expectedDataSet,
-      boolean disableCommitProtection,
       Instant deadReferenceCutoffTime) {
 
     try (SparkSession sparkSession = getSparkSession()) {
       ImmutableGCParams.Builder builder = ImmutableGCParams.builder();
       final Map<String, String> options = new HashMap<>();
       options.put(CONF_NESSIE_URI, getUri().toString());
-      if (disableCommitProtection) {
-        // disable commit protection for test purposes.
-        builder.commitProtectionDuration(Duration.ZERO);
-      }
       ImmutableGCParams gcParams =
           builder
               .bloomFilterExpectedEntries(5L)
@@ -115,6 +115,7 @@ public abstract class AbstractRestGC extends AbstractRest {
               .defaultCutOffTimestamp(cutoffTimeStamp)
               .nessieCatalogName("nessie")
               .outputBranchName("gcBranch")
+              .gcCheckPointTableIdentifier(prefix + ".gc_checkpoint")
               .outputTableIdentifier(prefix + ".gc_results")
               .build();
       GCImpl gc = new GCImpl(gcParams);
@@ -129,8 +130,7 @@ public abstract class AbstractRestGC extends AbstractRest {
       Dataset<Row> actualRowDataset =
           actualIdentifiedResultsRepo.collectExpiredContentsAsDataSet(runId);
       // compare the expected contents against the actual gc output
-      verify(
-          actualRowDataset, expectedDataSet, sparkSession, actualIdentifiedResultsRepo.getSchema());
+      verify(actualRowDataset, expectedDataSet, sparkSession, IdentifiedResultsRepo.getSchema());
     }
   }
 

@@ -18,20 +18,11 @@ package org.projectnessie.gc.base;
 import static org.apache.iceberg.types.Types.NestedField.optional;
 import static org.apache.iceberg.types.Types.NestedField.required;
 
-import com.google.errorprone.annotations.FormatMethod;
 import java.sql.Timestamp;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-import org.apache.iceberg.CatalogUtil;
 import org.apache.iceberg.Schema;
-import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.TableIdentifier;
-import org.apache.iceberg.exceptions.AlreadyExistsException;
-import org.apache.iceberg.nessie.NessieCatalog;
 import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.types.Types;
 import org.apache.spark.sql.Dataset;
@@ -41,16 +32,10 @@ import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
 import org.apache.spark.sql.types.StructType;
 import org.projectnessie.model.Content;
-import org.projectnessie.model.ImmutableTableReference;
 import org.projectnessie.model.Reference;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import scala.Tuple2;
 
 /** DDL + DML functionality for the "IdentifiedResult" table. */
-public final class IdentifiedResultsRepo {
-
-  private static final Logger LOGGER = LoggerFactory.getLogger(IdentifiedResultsRepo.class);
+public final class IdentifiedResultsRepo extends BaseRepo {
 
   private static final String COL_GC_RUN_START = "gcRunStart";
   private static final String COL_GC_RUN_ID = "gcRunId";
@@ -59,8 +44,11 @@ public final class IdentifiedResultsRepo {
   private static final String COL_SNAPSHOT_ID = "snapshotId";
   private static final String COL_REFERENCE_NAME = "referenceName";
   private static final String COL_HASH_ON_REFERENCE = "hashOnReference";
+  private static final String COL_COMMIT_HASH = "commitHash";
+  private static final String COL_METADATA_LOCATION = "metadataLocation";
+  private static final String COL_IS_EXPIRED = "isExpired";
 
-  private final Schema icebergSchema =
+  private static final Schema icebergSchema =
       new Schema(
           Types.StructType.of(
                   // GC run start timestamp.
@@ -76,22 +64,25 @@ public final class IdentifiedResultsRepo {
                   // Name of the reference via which the contentID was collected
                   optional(6, COL_REFERENCE_NAME, Types.StringType.get()),
                   // Hash of the reference via which the contentID was collected
-                  optional(7, COL_HASH_ON_REFERENCE, Types.StringType.get()))
+                  optional(7, COL_HASH_ON_REFERENCE, Types.StringType.get()),
+                  // commit hash which is containing this content object
+                  optional(8, COL_COMMIT_HASH, Types.StringType.get()),
+                  // latest metadata location of this content id on this reference
+                  optional(9, COL_METADATA_LOCATION, Types.StringType.get()),
+                  // to indicate whether the present content is expired or live
+                  optional(10, COL_IS_EXPIRED, Types.BooleanType.get()))
               .fields());
 
-  private final StructType schema = SparkSchemaUtil.convert(icebergSchema);
-
-  private final SparkSession sparkSession;
-  private final String catalogAndTableWithRefName;
+  private static final StructType schema = SparkSchemaUtil.convert(icebergSchema);
 
   public IdentifiedResultsRepo(
       SparkSession sparkSession, String catalog, String gcRefName, String gcTableIdentifier) {
-    this.sparkSession = sparkSession;
-    this.catalogAndTableWithRefName = withRefName(catalog, gcTableIdentifier, gcRefName);
-    createTableIfAbsent(sparkSession, catalog, TableIdentifier.parse(gcTableIdentifier), gcRefName);
+    super(sparkSession, catalog, gcRefName, gcTableIdentifier);
+    createTableIfAbsent(
+        sparkSession, catalog, TableIdentifier.parse(gcTableIdentifier), gcRefName, icebergSchema);
   }
 
-  public StructType getSchema() {
+  public static StructType getSchema() {
     return schema;
   }
 
@@ -103,11 +94,25 @@ public final class IdentifiedResultsRepo {
    *     reference.
    */
   public Dataset<Row> collectExpiredContentsAsDataSet(String runId) {
-    // Example Query:
-    // SELECT * FROM nessie.db1.`identified_results@someGcRef`
-    //    WHERE gcRunId = '9e809dc9-ac35-41c9-b1c0-5ebcf452ea2d'
     return sql(
-        "SELECT * FROM %s WHERE %s = '%s'",
+        "SELECT * FROM %s WHERE %s = '%s' AND %s = %s",
+        catalogAndTableWithRefName,
+        //
+        COL_GC_RUN_ID,
+        runId,
+        //
+        COL_IS_EXPIRED,
+        true);
+  }
+
+  /**
+   * Collect all the contents for the given run id as spark dataset.
+   *
+   * @param runId run id of completed identify task.
+   */
+  public Dataset<Row> collectAllContentsAsDataSet(String runId) {
+    return sql(
+        "SELECT * FROM %s WHERE %s = '%s' ",
         catalogAndTableWithRefName,
         //
         COL_GC_RUN_ID,
@@ -133,6 +138,28 @@ public final class IdentifiedResultsRepo {
     return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0).getString(0));
   }
 
+  public Optional<String> getAnyCommitHashForContentId(String contentId, String runID) {
+    // Example Query:
+    // SELECT commitHash FROM nessie.expire_multiRefMultipleSharedTables.`gc_results@gcRef`
+    //     WHERE gcRunId = 'd60b9bb1-22b9-4b9d-8566-245f89f7d00b'
+    //     AND contentId = '9fd0751d-ede7-4e32-9915-7d56a7a8e5f8'
+    //     LIMIT 1
+    List<Row> rows =
+        sql(
+                "SELECT %s FROM %s WHERE %s = '%s' AND %s = '%s' LIMIT 1",
+                COL_COMMIT_HASH,
+                //
+                catalogAndTableWithRefName,
+                //
+                COL_GC_RUN_ID,
+                runID,
+                //
+                COL_CONTENT_ID,
+                contentId)
+            .collectAsList();
+    return Optional.of(rows.get(0).getString(0));
+  }
+
   void writeToOutputTable(Dataset<Row> rowDataset) {
     try {
       // write content rows to the output table
@@ -144,7 +171,14 @@ public final class IdentifiedResultsRepo {
   }
 
   static Row createContentRow(
-      Content content, String runId, Timestamp startedAt, long snapshotId, Reference ref) {
+      Content content,
+      String runId,
+      Timestamp startedAt,
+      long snapshotId,
+      Reference ref,
+      String commitHash,
+      String metadataLocation,
+      boolean isExpired) {
     return RowFactory.create(
         startedAt,
         runId,
@@ -152,57 +186,9 @@ public final class IdentifiedResultsRepo {
         content.getType().name(),
         snapshotId,
         ref.getName(),
-        ref.getHash());
-  }
-
-  private void createTableIfAbsent(
-      SparkSession sparkSession,
-      String catalogName,
-      TableIdentifier tableIdentifier,
-      String gcRefName) {
-    // get Nessie catalog
-    Catalog nessieCatalog =
-        CatalogUtil.loadCatalog(
-            NessieCatalog.class.getName(),
-            catalogName,
-            catalogConfWithRef(sparkSession, catalogName, gcRefName),
-            sparkSession.sparkContext().hadoopConfiguration());
-    try {
-      nessieCatalog.createTable(tableIdentifier, icebergSchema);
-    } catch (AlreadyExistsException ex) {
-      // Table can exist from previous GC run, no need to throw exception.
-    }
-  }
-
-  private static String withRefName(String catalog, String identifier, String refName) {
-    int tableNameIndex = identifier.lastIndexOf(".");
-    String namespace = identifier.substring(0, tableNameIndex);
-    String tableName = identifier.substring(tableNameIndex + 1);
-    return catalog
-        + "."
-        + namespace
-        + "."
-        + ImmutableTableReference.builder().name(tableName).reference(refName).build();
-  }
-
-  private static Map<String, String> catalogConfWithRef(
-      SparkSession spark, String catalog, String branchName) {
-    // select the nessie catalog related conf.
-    Stream<Tuple2<String, String>> conf =
-        Arrays.stream(
-            spark
-                .sparkContext()
-                .conf()
-                .getAllWithPrefix(String.format("spark.sql.catalog.%s.", catalog)));
-    // override the default ref name configuration to branchName.
-    return conf.map(t -> t._1.equals("ref") ? Tuple2.apply(t._1, branchName) : t)
-        .collect(Collectors.toMap(t -> t._1, t -> t._2));
-  }
-
-  @FormatMethod
-  private Dataset<Row> sql(String sqlStatement, Object... args) {
-    String sql = String.format(sqlStatement, args);
-    LOGGER.debug("Executing the sql -> {}", sql);
-    return sparkSession.sql(sql);
+        ref.getHash(),
+        commitHash,
+        metadataLocation,
+        isExpired);
   }
 }

@@ -19,19 +19,29 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.lang.reflect.InvocationTargetException;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Spliterator;
 import java.util.Spliterators;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.commons.lang3.mutable.MutableBoolean;
+import org.apache.iceberg.CatalogUtil;
+import org.apache.iceberg.nessie.NessieCatalog;
+import org.apache.spark.sql.SparkSession;
 import org.projectnessie.client.NessieClientBuilder;
 import org.projectnessie.client.NessieConfigConstants;
 import org.projectnessie.client.api.NessieApiV1;
 import org.projectnessie.client.http.HttpClientBuilder;
+import org.projectnessie.error.NessieConflictException;
+import org.projectnessie.error.NessieNotFoundException;
+import org.projectnessie.model.Branch;
 import org.projectnessie.model.LogResponse;
 import org.projectnessie.model.Reference;
+import scala.Tuple2;
 
 public final class GCUtil {
 
@@ -64,44 +74,35 @@ public final class GCUtil {
             Math.floorMod(microsSinceEpoch, TimeUnit.SECONDS.toMicros(1))));
   }
 
-  /**
-   * Traverse the live commits stream till an entry is seen for each live content key and reached
-   * expired commits.
-   *
-   * @param foundAllLiveCommitHeadsBeforeCutoffTime condition to stop traversing
-   * @param commits stream of {@link LogResponse.LogEntry}
-   * @param commitHandler consumer of {@link LogResponse.LogEntry}
-   */
-  static void traverseLiveCommits(
-      MutableBoolean foundAllLiveCommitHeadsBeforeCutoffTime,
-      Stream<LogResponse.LogEntry> commits,
-      Consumer<LogResponse.LogEntry> commitHandler) {
-    Spliterator<LogResponse.LogEntry> src = commits.spliterator();
-    // Use a Spliterator to limit the processed commits to the "live" commits - i.e. stop traversing
-    // the expired commits once an entry is seen for each live content key.
-    new Spliterators.AbstractSpliterator<LogResponse.LogEntry>(src.estimateSize(), 0) {
-      private boolean more = true;
+  public static void getOrCreateEmptyBranch(NessieApiV1 api, String branchName) {
+    try {
+      api.getReference().refName(branchName).get();
+    } catch (NessieNotFoundException e) {
+      createEmptyBranch(api, branchName);
+    }
+  }
 
-      @Override
-      public boolean tryAdvance(Consumer<? super LogResponse.LogEntry> action) {
-        if (!more) {
-          return false;
-        }
-        more =
-            src.tryAdvance(
-                logEntry -> {
-                  if (foundAllLiveCommitHeadsBeforeCutoffTime.isTrue()) {
-                    // can stop traversing as found all the live commit heads
-                    // for each live keys before cutoff time.
-                    more = false;
-                  } else {
-                    // process this commit entry.
-                    action.accept(logEntry);
-                  }
-                });
-        return more;
-      }
-    }.forEachRemaining(commitHandler);
+  public static void createEmptyBranch(NessieApiV1 api, String branchName) {
+    // create a gc branch pointing to NO_ANCESTOR hash.
+    try {
+      api.createReference().reference(Branch.of(branchName, null)).create();
+    } catch (NessieNotFoundException | NessieConflictException ex) {
+      throw new RuntimeException(ex);
+    }
+  }
+
+  /**
+   * Loads the already existing nessie catalog of name {@code catalogName} and initialize to use the
+   * {@code refName}.
+   */
+  public static NessieCatalog loadNessieCatalog(
+      SparkSession sparkSession, String catalogName, String refName) {
+    return (NessieCatalog)
+        CatalogUtil.loadCatalog(
+            NessieCatalog.class.getName(),
+            catalogName,
+            catalogConfWithRef(sparkSession, catalogName, refName),
+            sparkSession.sparkContext().hadoopConfiguration());
   }
 
   /**
@@ -111,7 +112,7 @@ public final class GCUtil {
    * @param configuration map of client builder configurations.
    * @return {@link NessieApiV1} object.
    */
-  static NessieApiV1 getApi(Map<String, String> configuration) {
+  public static NessieApiV1 getApi(Map<String, String> configuration) {
     String clientBuilderClassName =
         configuration.get(NessieConfigConstants.CONF_NESSIE_CLIENT_BUILDER_IMPL);
     NessieClientBuilder builder;
@@ -139,5 +140,60 @@ public final class GCUtil {
       }
     }
     return (NessieApiV1) builder.fromConfig(configuration::get).build(NessieApiV1.class);
+  }
+
+  /**
+   * Traverse the live commits stream till an entry is seen for each live content key and reached
+   * expired commits.
+   *
+   * @param foundAllLiveCommitHeadsBeforeCutoffTime condition to stop traversing
+   * @param commits stream of {@link LogResponse.LogEntry}
+   * @param commitHandler consumer of {@link LogResponse.LogEntry}
+   * @return last visited commit hash. It is the commit hash when all the live contents heads are
+   *     found at the cutoff time.
+   */
+  static String traverseLiveCommits(
+      MutableBoolean foundAllLiveCommitHeadsBeforeCutoffTime,
+      Stream<LogResponse.LogEntry> commits,
+      Consumer<LogResponse.LogEntry> commitHandler) {
+    AtomicReference<String> lastVisitedHash = new AtomicReference<>();
+    Spliterator<LogResponse.LogEntry> src = commits.spliterator();
+    // Use a Spliterator to limit the processed commits to the "live" commits - i.e. stop traversing
+    // the expired commits once an entry is seen for each live content key.
+    new Spliterators.AbstractSpliterator<LogResponse.LogEntry>(src.estimateSize(), 0) {
+      private boolean more = true;
+
+      @Override
+      public boolean tryAdvance(Consumer<? super LogResponse.LogEntry> action) {
+        if (!more) {
+          return false;
+        }
+        more =
+            src.tryAdvance(
+                logEntry -> {
+                  // traverse until all the live commit heads are found for each live keys
+                  // at the time of cutoff time.
+                  if (foundAllLiveCommitHeadsBeforeCutoffTime.isFalse()) {
+                    action.accept(logEntry);
+                  }
+                  lastVisitedHash.set(logEntry.getCommitMeta().getHash());
+                });
+        more = more && foundAllLiveCommitHeadsBeforeCutoffTime.isFalse();
+        return more;
+      }
+    }.forEachRemaining(commitHandler);
+    return lastVisitedHash.get();
+  }
+
+  private static Map<String, String> catalogConfWithRef(
+      SparkSession spark, String catalog, String branch) {
+    Stream<Tuple2<String, String>> conf =
+        Arrays.stream(
+            spark
+                .sparkContext()
+                .conf()
+                .getAllWithPrefix(String.format("spark.sql.catalog.%s.", catalog)));
+    return conf.map(t -> t._1.equals("ref") ? Tuple2.apply(t._1, branch) : t)
+        .collect(Collectors.toMap(t -> t._1, t -> t._2));
   }
 }

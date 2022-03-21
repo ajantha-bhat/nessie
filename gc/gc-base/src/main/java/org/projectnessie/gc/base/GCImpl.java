@@ -15,18 +15,19 @@
  */
 package org.projectnessie.gc.base;
 
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.spark.sql.SparkSession;
 import org.projectnessie.api.params.FetchOption;
 import org.projectnessie.client.StreamingUtil;
 import org.projectnessie.client.api.NessieApiV1;
-import org.projectnessie.error.NessieConflictException;
 import org.projectnessie.error.NessieNotFoundException;
 import org.projectnessie.model.Branch;
 import org.projectnessie.model.RefLogResponse;
@@ -99,10 +100,13 @@ public class GCImpl {
     DistributedIdentifyContents distributedIdentifyContents;
     List<String> allRefs;
     Map<String, ContentBloomFilter> liveContentsBloomFilterMap;
+    Map<String, Instant> droppedReferenceTimeMap;
+    String runId = UUID.randomUUID().toString();
+    Timestamp startedAt = Timestamp.from(Instant.now());
     try (NessieApiV1 api = GCUtil.getApi(gcParams.getNessieClientConfigs())) {
       distributedIdentifyContents = new DistributedIdentifyContents(session, gcParams);
       List<Reference> liveReferences = api.getAllReferences().get().getReferences();
-      Map<String, Instant> droppedReferenceTimeMap = collectDeadReferences(api);
+      droppedReferenceTimeMap = collectDeadReferences(api);
       // As this list of references is passed from Spark driver to executor,
       // using available Immutables JSON serialization instead of adding java serialization to the
       // classes.
@@ -115,14 +119,15 @@ public class GCImpl {
           gcParams.getBloomFilterExpectedEntries() == null
               ? getTotalCommitsInDefaultReference(api)
               : gcParams.getBloomFilterExpectedEntries();
+      GCUtil.getOrCreateEmptyBranch(api, gcParams.getOutputBranchName());
       // Identify the live contents and return the bloom filter per content-id
       liveContentsBloomFilterMap =
           distributedIdentifyContents.getLiveContentsBloomFilters(
-              allRefs, bloomFilterSize, droppedReferenceTimeMap);
-      getOrCreateEmptyBranch(api, gcParams.getOutputBranchName());
+              allRefs, bloomFilterSize, droppedReferenceTimeMap, runId, startedAt);
     }
     // Identify the expired contents
-    return distributedIdentifyContents.identifyExpiredContents(liveContentsBloomFilterMap, allRefs);
+    return distributedIdentifyContents.identifyExpiredContents(
+        liveContentsBloomFilterMap, allRefs, droppedReferenceTimeMap, runId, startedAt);
   }
 
   private long getTotalCommitsInDefaultReference(NessieApiV1 api) {
@@ -189,18 +194,5 @@ public class GCImpl {
           }
         });
     return droppedReferenceTimeMap;
-  }
-
-  private static void getOrCreateEmptyBranch(NessieApiV1 api, String branchName) {
-    try {
-      api.getReference().refName(branchName).get();
-    } catch (NessieNotFoundException e) {
-      // create a gc branch pointing to NO_ANCESTOR hash.
-      try {
-        api.createReference().reference(Branch.of(branchName, null)).create();
-      } catch (NessieNotFoundException | NessieConflictException ex) {
-        throw new RuntimeException(ex);
-      }
-    }
   }
 }
