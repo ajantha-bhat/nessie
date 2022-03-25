@@ -89,6 +89,7 @@ public abstract class AbstractRestGCRepoTest extends AbstractRestGCTest {
               content.getType().name(),
               content.getSnapshotId(),
               refName,
+              null,
               null));
     }
     return rows;

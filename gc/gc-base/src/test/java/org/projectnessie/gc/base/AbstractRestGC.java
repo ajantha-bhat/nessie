@@ -66,28 +66,32 @@ public abstract class AbstractRestGC extends AbstractRest {
         .getLogEntries();
   }
 
-  void fillExpectedContents(Branch branch, int numCommits, List<Row> expected)
-      throws NessieNotFoundException {
-    fetchLogEntries(branch, numCommits).stream()
-        .map(LogEntry::getOperations)
-        .filter(Objects::nonNull)
-        .flatMap(Collection::stream)
-        .filter(op -> op instanceof Put)
-        .forEach(
-            op -> {
-              IcebergTable content = (IcebergTable) (((Put) op).getContent());
-              // using only contentId, ref, snapshot id for validation
-              // as metadata location will change based on new global state.
-              expected.add(
-                  RowFactory.create(
-                      Timestamp.from(Instant.now()),
-                      "dummyRunId",
-                      content.getId(),
-                      null,
-                      content.getSnapshotId(),
-                      branch.getName(),
-                      null));
-            });
+  protected void fillExpectedContents(Branch branch, int numCommits, List<Row> expected) {
+    try {
+      fetchLogEntries(branch, numCommits).stream()
+          .map(LogEntry::getOperations)
+          .filter(Objects::nonNull)
+          .flatMap(Collection::stream)
+          .filter(op -> op instanceof Put)
+          .forEach(
+              op -> {
+                IcebergTable content = (IcebergTable) (((Put) op).getContent());
+                // using only contentId, ref, snapshot id for validation
+                // as metadata location will change based on new global state.
+                expected.add(
+                    RowFactory.create(
+                        Timestamp.from(Instant.now()),
+                        "dummyRunId",
+                        content.getId(),
+                        null,
+                        content.getSnapshotId(),
+                        branch.getName(),
+                        null,
+                        null));
+              });
+    } catch (NessieNotFoundException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   protected void performGc(

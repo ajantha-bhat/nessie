@@ -109,7 +109,7 @@ public abstract class AbstractIdentifyProcedure extends AbstractRestGCTest {
                               5))
                       .collectAsList())
           .isInstanceOf(NoSuchProcedureException.class)
-          .hasMessageContaining("Procedure other_namespace.identify not found");
+          .hasMessageContaining("Procedure other_namespace.identify_expired_snapshots not found");
 
       // skip passing the required argument 'default_cut_off_timestamp'
       assertThatThrownBy(
