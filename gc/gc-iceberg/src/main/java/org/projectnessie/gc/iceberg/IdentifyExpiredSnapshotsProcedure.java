@@ -108,18 +108,15 @@ public class IdentifyExpiredSnapshotsProcedure extends BaseGcProcedure {
     paramsBuilder.nessieCatalogName(internalRow.getString(1));
     paramsBuilder.outputBranchName(internalRow.getString(2));
     paramsBuilder.outputTableIdentifier(internalRow.getString(3));
-    if (!internalRow.isNullAt(4)) {
-      MapData map = internalRow.getMap(4);
-      Map<String, String> nessieClientConfig = new HashMap<>();
-      for (int i = 0; i < map.numElements(); i++) {
-        nessieClientConfig.put(
-            map.keyArray().getUTF8String(i).toString(),
-            map.valueArray().getUTF8String(i).toString());
-      }
-      paramsBuilder.nessieClientConfigs(nessieClientConfig);
+    MapData map = internalRow.getMap(4);
+    Map<String, String> nessieClientConfig = new HashMap<>();
+    for (int i = 0; i < map.numElements(); i++) {
+      nessieClientConfig.put(
+          map.keyArray().getUTF8String(i).toString(), map.valueArray().getUTF8String(i).toString());
     }
+    paramsBuilder.nessieClientConfigs(nessieClientConfig);
     if (!internalRow.isNullAt(5)) {
-      MapData map = internalRow.getMap(5);
+      map = internalRow.getMap(5);
       Map<String, Instant> perReferenceCutoffs = new HashMap<>();
       for (int i = 0; i < map.numElements(); i++) {
         String refName = map.keyArray().getUTF8String(i).toString();

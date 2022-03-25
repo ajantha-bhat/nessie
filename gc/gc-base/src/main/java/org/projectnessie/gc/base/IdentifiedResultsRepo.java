@@ -18,17 +18,10 @@ package org.projectnessie.gc.base;
 import static org.apache.iceberg.types.Types.NestedField.optional;
 import static org.apache.iceberg.types.Types.NestedField.required;
 
-import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-import org.apache.iceberg.CatalogUtil;
 import org.apache.iceberg.Schema;
-import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
-import org.apache.iceberg.nessie.NessieCatalog;
 import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.types.Types;
 import org.apache.spark.sql.Dataset;
@@ -37,10 +30,11 @@ import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
 import org.apache.spark.sql.types.StructType;
+import org.projectnessie.model.Content;
 import org.projectnessie.model.ImmutableTableReference;
+import org.projectnessie.model.Reference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import scala.Tuple2;
 
 /** DDL + DML functionality for the "IdentifiedResult" table. */
 public final class IdentifiedResultsRepo {
@@ -54,6 +48,8 @@ public final class IdentifiedResultsRepo {
   private static final String COL_SNAPSHOT_ID = "snapshotId";
   private static final String COL_REFERENCE_NAME = "referenceName";
   private static final String COL_HASH_ON_REFERENCE = "hashOnReference";
+  private static final String COL_CONTENT_KEY = "contentKey";
+  private static final String COL_COMMIT_HASH = "commitHash";
 
   private final Schema icebergSchema =
       new Schema(
@@ -71,7 +67,11 @@ public final class IdentifiedResultsRepo {
                   // Name of the reference via which the contentID was collected
                   optional(6, COL_REFERENCE_NAME, Types.StringType.get()),
                   // Hash of the reference via which the contentID was collected
-                  optional(7, COL_HASH_ON_REFERENCE, Types.StringType.get()))
+                  optional(7, COL_HASH_ON_REFERENCE, Types.StringType.get()),
+                  // Hash of the reference via which the contentID was collected
+                  optional(8, COL_CONTENT_KEY, Types.StringType.get()),
+                  // commit hash which is containing this content object
+                  optional(9, COL_COMMIT_HASH, Types.StringType.get()))
               .fields());
 
   private final StructType schema = SparkSchemaUtil.convert(icebergSchema);
@@ -128,6 +128,22 @@ public final class IdentifiedResultsRepo {
     return rows.isEmpty() ? null : rows.get(0).getString(0);
   }
 
+  public Row getAnyCommitHashAndKeyForContentId(String contentId) {
+    // TODO: example query
+    List<Row> rows =
+        sql(
+                "SELECT %s,%s FROM %s WHERE %s = '%s' LIMIT 1",
+                COL_COMMIT_HASH,
+                COL_CONTENT_KEY,
+                //
+                catalogAndTableWithRefName,
+                //
+                COL_CONTENT_ID,
+                contentId)
+            .collectAsList();
+    return rows.get(0);
+  }
+
   void writeToOutputTable(Dataset<Row> rowDataset) {
     try {
       // write content rows to the output table
@@ -138,12 +154,20 @@ public final class IdentifiedResultsRepo {
   }
 
   static Row getContentRowVariablePart(
-      String contentId, String contentType, long snapshotId, String refName, String hash) {
+      Reference reference, Content content, String commitHash, String contentKey, long snapshotId) {
     return RowFactory.create(
         // the fixed value columns (runId and startTime)
         // will be added in the callers using dataframe.withColumn().
         // Hence they are filled as 'null' here.
-        null, null, contentId, contentType, snapshotId, refName, hash);
+        null,
+        null,
+        content.getId(),
+        content.getType().name(),
+        snapshotId,
+        reference.getName(),
+        reference.getHash(),
+        contentKey,
+        commitHash);
   }
 
   private void createTableIfAbsent(
@@ -151,15 +175,9 @@ public final class IdentifiedResultsRepo {
       String catalogName,
       TableIdentifier tableIdentifier,
       String gcRefName) {
-    // get Nessie catalog
-    Catalog nessieCatalog =
-        CatalogUtil.loadCatalog(
-            NessieCatalog.class.getName(),
-            catalogName,
-            catalogConfWithRef(sparkSession, catalogName, gcRefName),
-            sparkSession.sparkContext().hadoopConfiguration());
     try {
-      nessieCatalog.createTable(tableIdentifier, icebergSchema);
+      GCUtil.loadNessieCatalog(sparkSession, catalogName, gcRefName)
+          .createTable(tableIdentifier, icebergSchema);
     } catch (AlreadyExistsException ex) {
       // Table can exist from previous GC run, no need to throw exception.
     }
@@ -174,18 +192,6 @@ public final class IdentifiedResultsRepo {
         + namespace
         + "."
         + ImmutableTableReference.builder().name(tableName).reference(refName).build();
-  }
-
-  private static Map<String, String> catalogConfWithRef(
-      SparkSession spark, String catalog, String branch) {
-    Stream<Tuple2<String, String>> conf =
-        Arrays.stream(
-            spark
-                .sparkContext()
-                .conf()
-                .getAllWithPrefix(String.format("spark.sql.catalog.%s.", catalog)));
-    return conf.map(t -> t._1.equals("ref") ? Tuple2.apply(t._1, branch) : t)
-        .collect(Collectors.toMap(t -> t._1, t -> t._2));
   }
 
   private Dataset<Row> sql(String sqlStatement, Object... args) {

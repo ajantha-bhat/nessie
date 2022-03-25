@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
@@ -260,7 +261,13 @@ public class IdentifyContentsPerExecutor implements Serializable {
         content ->
             (liveContentsBloomFilterMap.get(content.getId()) == null
                 || !liveContentsBloomFilterMap.get(content.getId()).mightContain(content));
+    Predicate<Content> validSnapshotPredicate =
+        content ->
+            (content instanceof IcebergTable && ((IcebergTable) content).getSnapshotId() != -1
+                || content instanceof IcebergView && ((IcebergView) content).getVersionId() != -1);
     try {
+      AtomicReference<String> commitHash = new AtomicReference<>();
+      AtomicReference<String> contentKey = new AtomicReference<>();
       Iterator<Content> iterator =
           StreamingUtil.getCommitLogStream(
                   api,
@@ -271,15 +278,24 @@ public class IdentifyContentsPerExecutor implements Serializable {
                           .fetch(FetchOption.ALL),
                   OptionalInt.empty())
               .filter(unprotectedCommitsPredicate)
-              .map(LogResponse.LogEntry::getOperations)
+              .map(
+                  entry -> {
+                    commitHash.set(entry.getCommitMeta().getHash());
+                    return entry.getOperations();
+                  })
               .flatMap(operations -> operations.stream().filter(Operation.Put.class::isInstance))
               .map(Operation.Put.class::cast)
-              .map(Operation.Put::getContent)
+              .map(
+                  put -> {
+                    contentKey.set(put.getKey().toString());
+                    return put.getContent();
+                  })
               .filter(
                   content ->
                       (content.getType() == Content.Type.ICEBERG_TABLE
                           || content.getType() == Content.Type.ICEBERG_VIEW))
               .filter(expiredContentPredicate)
+              .filter(validSnapshotPredicate)
               .iterator();
 
       return new Iterator<Row>() {
@@ -290,7 +306,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
 
         @Override
         public Row next() {
-          return fillRow(reference, iterator.next());
+          return fillRow(reference, iterator.next(), commitHash.get(), contentKey.get());
         }
       };
     } catch (NessieNotFoundException e) {
@@ -298,13 +314,10 @@ public class IdentifyContentsPerExecutor implements Serializable {
     }
   }
 
-  private static Row fillRow(Reference reference, Content content) {
+  private static Row fillRow(
+      Reference reference, Content content, String commitHash, String contentKey) {
     return IdentifiedResultsRepo.getContentRowVariablePart(
-        content.getId(),
-        content.getType().name(),
-        getSnapshotId(content),
-        reference.getName(),
-        reference.getHash());
+        reference, content, commitHash, contentKey, getSnapshotId(content));
   }
 
   private static long getSnapshotId(Content content) {
