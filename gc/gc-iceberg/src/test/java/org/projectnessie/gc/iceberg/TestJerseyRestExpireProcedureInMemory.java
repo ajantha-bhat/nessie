@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.projectnessie.gc.base;
+package org.projectnessie.gc.iceberg;
 
 import java.net.URI;
 import org.junit.jupiter.api.BeforeAll;
@@ -34,7 +34,7 @@ import org.projectnessie.versioned.persist.tests.extension.NessieExternalDatabas
 @NessieDbAdapterName(InmemoryDatabaseAdapterFactory.NAME)
 @NessieExternalDatabase(InmemoryTestConnectionProviderSource.class)
 @ExtendWith(DatabaseAdapterExtension.class)
-class TestJerseyRestGcInMemory extends AbstractRestGCRepoTest {
+class TestJerseyRestExpireProcedureInMemory extends AbstractExpireProcedure {
 
   @NessieDbAdapter(storeWorker = TableCommitMetaStoreWorker.class)
   static DatabaseAdapter databaseAdapter;
