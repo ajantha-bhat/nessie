@@ -20,6 +20,7 @@ import java.io.Serializable;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -47,6 +48,8 @@ import org.projectnessie.model.IcebergView;
 import org.projectnessie.model.LogResponse;
 import org.projectnessie.model.Operation;
 import org.projectnessie.model.Reference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import scala.collection.JavaConverters;
 
 /**
@@ -56,6 +59,7 @@ import scala.collection.JavaConverters;
 public class IdentifyContentsPerExecutor implements Serializable {
 
   private final GCParams gcParams;
+  private static final Logger LOGGER = LoggerFactory.getLogger(IdentifyContentsPerExecutor.class);
 
   public IdentifyContentsPerExecutor(GCParams gcParams) {
     this.gcParams = gcParams;
@@ -222,26 +226,22 @@ public class IdentifyContentsPerExecutor implements Serializable {
       String runId,
       Timestamp startedAt) {
     List<Iterator<Row>> iterators = new ArrayList<>();
-    try (NessieApiV1 api = GCUtil.getApi(gcParams.getNessieClientConfigs())) {
-      references.foreach(
-          reference -> {
-            iterators.add(
-                walkAllCommitsInReference(
-                    api,
-                    GCUtil.deserializeReference(reference),
-                    liveContentsBloomFilterMap,
-                    runId,
-                    startedAt));
-            return reference;
-          });
-      // merge the iterators from each task.
-      Iterator<Row> mergedIterator = Iterators.concat(iterators.iterator());
-      return JavaConverters.asScalaIterator(mergedIterator);
-    }
+    references.foreach(
+        reference -> {
+          iterators.add(
+              walkAllCommitsInReference(
+                  GCUtil.deserializeReference(reference),
+                  liveContentsBloomFilterMap,
+                  runId,
+                  startedAt));
+          return reference;
+        });
+    // merge the iterators from each task.
+    Iterator<Row> mergedIterator = Iterators.concat(iterators.iterator());
+    return JavaConverters.asScalaIterator(mergedIterator);
   }
 
   private Iterator<Row> walkAllCommitsInReference(
-      NessieApiV1 api,
       Reference reference,
       Map<String, ContentBloomFilter> liveContentsBloomFilterMap,
       String runId,
@@ -268,6 +268,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
         content ->
             (liveContentsBloomFilterMap.get(content.getId()) == null
                 || !liveContentsBloomFilterMap.get(content.getId()).mightContain(content));
+    NessieApiV1 api = GCUtil.getApi(gcParams.getNessieClientConfigs());
     try {
       Iterator<Content> iterator =
           StreamingUtil.getCommitLogStream(
@@ -293,7 +294,11 @@ public class IdentifyContentsPerExecutor implements Serializable {
       return new Iterator<Row>() {
         @Override
         public boolean hasNext() {
-          return iterator.hasNext();
+          boolean hasNext = iterator.hasNext();
+          if (!hasNext) {
+            api.close();
+          }
+          return hasNext;
         }
 
         @Override
@@ -301,8 +306,14 @@ public class IdentifyContentsPerExecutor implements Serializable {
           return fillRow(reference, iterator.next(), runId, startedAt);
         }
       };
-    } catch (NessieNotFoundException e) {
-      throw new RuntimeException(e);
+    } catch (Exception e) {
+      api.close();
+      if (e instanceof NessieNotFoundException) {
+        throw new RuntimeException(e);
+      } else {
+        LOGGER.error("Error in walkAllCommitsInReference:", e);
+        return Collections.emptyIterator();
+      }
     }
   }
 
