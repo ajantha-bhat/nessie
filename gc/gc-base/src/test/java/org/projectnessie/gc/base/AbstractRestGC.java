@@ -28,7 +28,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import javax.validation.constraints.NotNull;
+import java.util.OptionalInt;
 import org.apache.spark.SparkConf;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
@@ -37,6 +37,7 @@ import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.types.StructType;
 import org.junit.jupiter.api.io.TempDir;
 import org.projectnessie.api.params.FetchOption;
+import org.projectnessie.client.StreamingUtil;
 import org.projectnessie.client.api.CommitMultipleOperationsBuilder;
 import org.projectnessie.error.NessieConflictException;
 import org.projectnessie.error.NessieNotFoundException;
@@ -54,21 +55,16 @@ public abstract class AbstractRestGC extends AbstractRest {
 
   @TempDir File tempDir;
 
-  @NotNull
-  List<LogEntry> fetchLogEntries(Branch branch, int numCommits) throws NessieNotFoundException {
-    return getApi()
-        .getCommitLog()
-        .refName(branch.getName())
-        .hashOnRef(branch.getHash())
-        .fetch(FetchOption.ALL)
-        .maxRecords(numCommits)
-        .get()
-        .getLogEntries();
-  }
-
   void fillExpectedContents(Branch branch, int numCommits, List<Row> expected)
       throws NessieNotFoundException {
-    fetchLogEntries(branch, numCommits).stream()
+    StreamingUtil.getCommitLogStream(
+            getApi(),
+            builder ->
+                builder
+                    .hashOnRef(branch.getHash())
+                    .refName(branch.getName())
+                    .fetch(FetchOption.ALL),
+            OptionalInt.of(numCommits))
         .map(LogEntry::getOperations)
         .filter(Objects::nonNull)
         .flatMap(Collection::stream)
@@ -97,7 +93,24 @@ public abstract class AbstractRestGC extends AbstractRest {
       List<Row> expectedDataSet,
       boolean disableCommitProtection,
       Instant deadReferenceCutoffTime) {
+    performGc(
+        prefix,
+        cutoffTimeStamp,
+        cutOffTimeStampPerRef,
+        expectedDataSet,
+        disableCommitProtection,
+        deadReferenceCutoffTime,
+        5L);
+  }
 
+  void performGc(
+      String prefix,
+      Instant cutoffTimeStamp,
+      Map<String, Instant> cutOffTimeStampPerRef,
+      List<Row> expectedDataSet,
+      boolean disableCommitProtection,
+      Instant deadReferenceCutoffTime,
+      long bloomFilterSize) {
     try (SparkSession sparkSession = getSparkSession()) {
       ImmutableGCParams.Builder builder = ImmutableGCParams.builder();
       final Map<String, String> options = new HashMap<>();
@@ -108,7 +121,7 @@ public abstract class AbstractRestGC extends AbstractRest {
       }
       ImmutableGCParams gcParams =
           builder
-              .bloomFilterExpectedEntries(5L)
+              .bloomFilterExpectedEntries(bloomFilterSize)
               .nessieClientConfigs(options)
               .deadReferenceCutOffTimeStamp(deadReferenceCutoffTime)
               .cutOffTimestampPerRef(cutOffTimeStampPerRef)

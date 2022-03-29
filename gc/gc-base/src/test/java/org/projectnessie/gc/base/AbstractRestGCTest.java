@@ -24,7 +24,10 @@ import java.util.Map;
 import org.apache.spark.sql.Row;
 import org.junit.jupiter.api.Test;
 import org.projectnessie.error.BaseNessieClientServerException;
+import org.projectnessie.error.NessieConflictException;
+import org.projectnessie.error.NessieNotFoundException;
 import org.projectnessie.model.Branch;
+import org.projectnessie.model.IcebergTable;
 
 public abstract class AbstractRestGCTest extends AbstractRestGC {
 
@@ -858,5 +861,78 @@ public abstract class AbstractRestGCTest extends AbstractRestGC {
     deleteBranch(branch1.getName(), table1.hash);
 
     performGc(prefix, cutoffTime, null, expectedResult, true, null);
+  }
+
+  @Test
+  public void testMultiRefLargeCommits() throws BaseNessieClientServerException {
+    // ------  Time ---- | --- branch1 -------------| ---- branch2 -----------   |
+    //         t0        | create branch            |                            |
+    //         t1        |                          |  create branch             |
+    //         t2        | TABLE_ONE : 1 (expired)  |                            |
+    //         t4        | TABLE_ONE : 2 (expired)  |                            |
+    //          .        |     .                    |                            |
+    //          .        | TABLE_ONE : 150 (expired)|                            |
+    //          .        | TABLE_ONE : 151          |                            |
+    //         tx        |                          |  TABLE_TWO : 1 (expired)   |
+    //         ty        |                          |  TABLE_TWO : 2 (expired)   |
+    //          .        |     .                    |      .                     |
+    //          .        |     .                    |      .                     |
+    //          .        |     .                    |      .                     |
+    //          .        |                          |  TABLE_TWO : 350 (expired) |
+    //          .        |                          |  TABLE_TWO : 351           |
+    //         tn        |-- cut off time --------  |-- cut off time --------    |
+
+    // 150 expired commits in branch1 and 300 expired commits in branch2.
+    String prefix = "multiRefLargeCommits";
+    List<Row> expectedResult = new ArrayList<>();
+
+    Branch branch1 = createBranch(prefix + "_1");
+    Branch branch2 = createBranch(prefix + "_2");
+    // commits for TABLE_ONE on branch1
+    String previousHash = branch1.getHash();
+    previousHash =
+        multipleCommits(prefix, branch1, previousHash, 151, CID_ONE, TABLE_ONE, METADATA_ONE);
+    // using 'previousHash' to skip the live head commit and collect remaining 150 expired commits
+    fillExpectedContents(Branch.of(branch1.getName(), previousHash), 150, expectedResult);
+    // commits for TABLE_TWO on branch2
+    previousHash = branch2.getHash();
+    previousHash =
+        multipleCommits(prefix, branch2, previousHash, 301, CID_TWO, TABLE_TWO, METADATA_TWO);
+    // using 'previousHash' to skip the live head commit and collect remaining 300 expired commits
+    fillExpectedContents(Branch.of(branch2.getName(), previousHash), 300, expectedResult);
+    final Instant cutoffTime = Instant.now();
+
+    performGc(prefix, cutoffTime, null, expectedResult, true, null, 350L);
+  }
+
+  private String multipleCommits(
+      String prefix,
+      Branch branch,
+      String previousHash,
+      int numOfCommits,
+      String contentId,
+      String contentKey,
+      String metadataPath)
+      throws NessieNotFoundException, NessieConflictException {
+    CommitOutput table2;
+    IcebergTable previousContent = null;
+    for (int id = 1; id <= numOfCommits; id++) {
+      table2 =
+          commitSingleOp(
+              prefix,
+              branch,
+              previousHash,
+              id,
+              contentId,
+              contentKey,
+              metadataPath + id,
+              previousContent,
+              null);
+      previousContent = table2.content;
+      if (id != numOfCommits) {
+        previousHash = table2.hash;
+      }
+    }
+    return previousHash;
   }
 }
