@@ -56,11 +56,10 @@ public class DistributedIdentifyContents {
    */
   public Map<String, ContentBloomFilter> getLiveContentsBloomFilters(
       List<String> references, long bloomFilterSize, Map<String, Instant> droppedRefTimeMap) {
-    IdentifyContentsPerExecutor executor = new IdentifyContentsPerExecutor(gcParams);
     List<Map<String, ContentBloomFilter>> bloomFilterMaps =
         new JavaSparkContext(session.sparkContext())
             .parallelize(references, getPartitionsCount(gcParams, references))
-            .map(executor.computeLiveContentsFunc(bloomFilterSize, droppedRefTimeMap))
+            .map(IdentifyContentsPerExecutor.computeLiveContentsFunc(bloomFilterSize, droppedRefTimeMap, gcParams))
             .collect();
     return mergeLiveContentResults(bloomFilterMaps, gcParams.getBloomFilterFpp());
   }
@@ -83,12 +82,11 @@ public class DistributedIdentifyContents {
             gcParams.getNessieCatalogName(),
             gcParams.getOutputBranchName(),
             gcParams.getOutputTableIdentifier());
-    IdentifyContentsPerExecutor executor = new IdentifyContentsPerExecutor(gcParams);
     Dataset<Row> rowDataset =
         session
             .createDataset(references, Encoders.STRING())
             .mapPartitions(
-                executor.getExpiredContentRowsFunc(liveContentsBloomFilterMap, runId, startedAt),
+              IdentifyContentsPerExecutor.getExpiredContentRowsFunc(liveContentsBloomFilterMap, runId, startedAt, gcParams),
                 RowEncoder.apply(identifiedResultsRepo.getSchema()));
     identifiedResultsRepo.writeToOutputTable(rowDataset);
     return runId;

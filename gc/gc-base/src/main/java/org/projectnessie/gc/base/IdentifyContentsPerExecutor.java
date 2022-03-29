@@ -47,6 +47,7 @@ import org.projectnessie.model.IcebergView;
 import org.projectnessie.model.LogResponse;
 import org.projectnessie.model.Operation;
 import org.projectnessie.model.Reference;
+import scala.Function1;
 import scala.collection.JavaConverters;
 
 /**
@@ -55,33 +56,31 @@ import scala.collection.JavaConverters;
  */
 public class IdentifyContentsPerExecutor implements Serializable {
 
-  private final GCParams gcParams;
+  private IdentifyContentsPerExecutor() {}
 
-  public IdentifyContentsPerExecutor(GCParams gcParams) {
-    this.gcParams = gcParams;
-  }
-
-  protected Function<String, Map<String, ContentBloomFilter>> computeLiveContentsFunc(
-      long bloomFilterSize, Map<String, Instant> droppedRefTimeMap) {
+  protected static Function<String, Map<String, ContentBloomFilter>> computeLiveContentsFunc(
+      long bloomFilterSize, Map<String, Instant> droppedRefTimeMap, GCParams gcParams) {
     return reference ->
         computeLiveContents(
-            getCutoffTimeForRef(reference, droppedRefTimeMap),
+            getCutoffTimeForRef(reference, droppedRefTimeMap, gcParams),
             reference,
             droppedRefTimeMap.get(reference),
-            bloomFilterSize);
+            bloomFilterSize,
+            gcParams);
   }
 
-  protected SerializableFunction1<scala.collection.Iterator<String>, scala.collection.Iterator<Row>>
+  protected static Function1<scala.collection.Iterator<String>, scala.collection.Iterator<Row>>
       getExpiredContentRowsFunc(
           Map<String, ContentBloomFilter> liveContentsBloomFilterMap,
           String runId,
-          Timestamp startedAt) {
-    return result -> getExpiredContentRows(result, liveContentsBloomFilterMap, runId, startedAt);
+          Timestamp startedAt,
+          GCParams gcParams) {
+    return result -> getExpiredContentRows(result, liveContentsBloomFilterMap, runId, startedAt, gcParams);
   }
 
   // --- Methods for computing live content bloom filter ----------
-  private Map<String, ContentBloomFilter> computeLiveContents(
-      Instant cutOffTimestamp, String reference, Instant droppedRefTime, long bloomFilterSize) {
+  private static Map<String, ContentBloomFilter> computeLiveContents(
+      Instant cutOffTimestamp, String reference, Instant droppedRefTime, long bloomFilterSize, GCParams gcParams) {
     try (NessieApiV1 api = GCUtil.getApi(gcParams.getNessieClientConfigs())) {
       boolean isRefDroppedAfterCutoffTimeStamp =
           droppedRefTime == null || droppedRefTime.compareTo(cutOffTimestamp) >= 0;
@@ -104,12 +103,12 @@ public class IdentifyContentsPerExecutor implements Serializable {
               .bloomFilterSize(bloomFilterSize)
               .build();
 
-      return walkLiveCommitsInReference(gcStateParamsPerTask);
+      return walkLiveCommitsInReference(gcStateParamsPerTask, gcParams);
     }
   }
 
-  private Map<String, ContentBloomFilter> walkLiveCommitsInReference(
-      GCStateParamsPerTask gcStateParamsPerTask) {
+  private static Map<String, ContentBloomFilter> walkLiveCommitsInReference(
+      GCStateParamsPerTask gcStateParamsPerTask, GCParams gcParams) {
     Map<String, ContentBloomFilter> bloomFilterMap = new HashMap<>();
     Set<ContentKey> liveContentKeys = new HashSet<>();
     try (Stream<LogResponse.LogEntry> commits =
@@ -130,7 +129,8 @@ public class IdentifyContentsPerExecutor implements Serializable {
                   logEntry,
                   bloomFilterMap,
                   foundAllLiveCommitHeadsBeforeCutoffTime,
-                  liveContentKeys);
+                  liveContentKeys,
+                gcParams);
       // traverse commits using the spliterator
       GCUtil.traverseLiveCommits(foundAllLiveCommitHeadsBeforeCutoffTime, commits, commitHandler);
     } catch (NessieNotFoundException e) {
@@ -139,12 +139,13 @@ public class IdentifyContentsPerExecutor implements Serializable {
     return bloomFilterMap;
   }
 
-  private void handleLiveCommit(
+  private static void handleLiveCommit(
       GCStateParamsPerTask gcStateParamsPerTask,
       LogResponse.LogEntry logEntry,
       Map<String, ContentBloomFilter> bloomFilterMap,
       MutableBoolean foundAllLiveCommitHeadsBeforeCutoffTime,
-      Set<ContentKey> liveContentKeys) {
+      Set<ContentKey> liveContentKeys,
+    GCParams gcParams) {
     if (logEntry.getOperations() != null) {
       boolean isExpired =
           !gcStateParamsPerTask.getLiveCommitPredicate().test(logEntry.getCommitMeta());
@@ -195,7 +196,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
     }
   }
 
-  private Instant getCutoffTimeForRef(String reference, Map<String, Instant> droppedRefTimeMap) {
+  private static Instant getCutoffTimeForRef(String reference, Map<String, Instant> droppedRefTimeMap, GCParams gcParams) {
     if (droppedRefTimeMap.containsKey(reference)
         && gcParams.getDeadReferenceCutOffTimeStamp() != null) {
       // if the reference is dropped and deadReferenceCutOffTimeStamp is configured, use it.
@@ -216,11 +217,12 @@ public class IdentifyContentsPerExecutor implements Serializable {
    *
    * <p>Each reference can produce one or more rows.
    */
-  private scala.collection.Iterator<Row> getExpiredContentRows(
+  private static scala.collection.Iterator<Row> getExpiredContentRows(
       scala.collection.Iterator<String> references,
       Map<String, ContentBloomFilter> liveContentsBloomFilterMap,
       String runId,
-      Timestamp startedAt) {
+      Timestamp startedAt,
+      GCParams gcParams) {
     List<Iterator<Row>> iterators = new ArrayList<>();
     try (NessieApiV1 api = GCUtil.getApi(gcParams.getNessieClientConfigs())) {
       references.foreach(
@@ -231,7 +233,8 @@ public class IdentifyContentsPerExecutor implements Serializable {
                     GCUtil.deserializeReference(reference),
                     liveContentsBloomFilterMap,
                     runId,
-                    startedAt));
+                    startedAt,
+                    gcParams));
             return reference;
           });
       // merge the iterators from each task.
@@ -240,12 +243,13 @@ public class IdentifyContentsPerExecutor implements Serializable {
     }
   }
 
-  private Iterator<Row> walkAllCommitsInReference(
+  private static Iterator<Row> walkAllCommitsInReference(
       NessieApiV1 api,
       Reference reference,
       Map<String, ContentBloomFilter> liveContentsBloomFilterMap,
       String runId,
-      Timestamp startedAt) {
+      Timestamp startedAt,
+      GCParams gcParams) {
     Instant commitProtectionTime = Instant.now().minus(gcParams.getCommitProtectionDuration());
     // Between the bloom filter creation and this step,
     // there can be some more commits in the backend.
