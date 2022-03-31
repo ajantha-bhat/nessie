@@ -117,8 +117,7 @@ public abstract class AbstractRestGC extends AbstractRest {
               .outputBranchName("gcBranch")
               .outputTableIdentifier(prefix + ".gc_results")
               .build();
-      GCImpl gc = new GCImpl(gcParams);
-      String runId = gc.identifyExpiredContents(sparkSession);
+      String runId = GCImpl.identifyExpiredContents(sparkSession, gcParams);
 
       IdentifiedResultsRepo actualIdentifiedResultsRepo =
           new IdentifiedResultsRepo(

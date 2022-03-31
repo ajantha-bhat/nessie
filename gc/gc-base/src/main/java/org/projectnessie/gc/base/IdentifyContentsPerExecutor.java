@@ -66,27 +66,26 @@ public class IdentifyContentsPerExecutor implements Serializable {
   }
 
   protected Function<String, Map<String, ContentBloomFilter>> computeLiveContentsFunc(
-      long bloomFilterSize, Map<String, Instant> droppedRefTimeMap) {
+      long bloomFilterSize, Map<String, Instant> droppedRefTimeMap, NessieApiV1 api) {
     return reference ->
         computeLiveContents(
             getCutoffTimeForRef(reference, droppedRefTimeMap),
             reference,
             droppedRefTimeMap.get(reference),
-            bloomFilterSize);
+            bloomFilterSize, api);
   }
 
   protected SerializableFunction1<scala.collection.Iterator<String>, scala.collection.Iterator<Row>>
       getExpiredContentRowsFunc(
           Map<String, ContentBloomFilter> liveContentsBloomFilterMap,
           String runId,
-          Timestamp startedAt) {
-    return result -> getExpiredContentRows(result, liveContentsBloomFilterMap, runId, startedAt);
+          Timestamp startedAt, NessieApiV1 api) {
+    return result -> getExpiredContentRows(result, liveContentsBloomFilterMap, runId, startedAt, api);
   }
 
   // --- Methods for computing live content bloom filter ----------
   private Map<String, ContentBloomFilter> computeLiveContents(
-      Instant cutOffTimestamp, String reference, Instant droppedRefTime, long bloomFilterSize) {
-    try (NessieApiV1 api = GCUtil.getApi(gcParams.getNessieClientConfigs())) {
+      Instant cutOffTimestamp, String reference, Instant droppedRefTime, long bloomFilterSize, NessieApiV1 api) {
       boolean isRefDroppedAfterCutoffTimeStamp =
           droppedRefTime == null || droppedRefTime.compareTo(cutOffTimestamp) >= 0;
       if (!isRefDroppedAfterCutoffTimeStamp) {
@@ -109,7 +108,6 @@ public class IdentifyContentsPerExecutor implements Serializable {
               .build();
 
       return walkLiveCommitsInReference(gcStateParamsPerTask);
-    }
   }
 
   private Map<String, ContentBloomFilter> walkLiveCommitsInReference(
@@ -224,7 +222,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
       scala.collection.Iterator<String> references,
       Map<String, ContentBloomFilter> liveContentsBloomFilterMap,
       String runId,
-      Timestamp startedAt) {
+      Timestamp startedAt, NessieApiV1 api) {
     List<Iterator<Row>> iterators = new ArrayList<>();
     references.foreach(
         reference -> {
@@ -233,7 +231,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
                   GCUtil.deserializeReference(reference),
                   liveContentsBloomFilterMap,
                   runId,
-                  startedAt));
+                  startedAt, api));
           return reference;
         });
     // merge the iterators from each task.
@@ -245,7 +243,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
       Reference reference,
       Map<String, ContentBloomFilter> liveContentsBloomFilterMap,
       String runId,
-      Timestamp startedAt) {
+      Timestamp startedAt, NessieApiV1 api) {
     Instant commitProtectionTime = Instant.now().minus(gcParams.getCommitProtectionDuration());
     // Between the bloom filter creation and this step,
     // there can be some more commits in the backend.
@@ -268,7 +266,6 @@ public class IdentifyContentsPerExecutor implements Serializable {
         content ->
             (liveContentsBloomFilterMap.get(content.getId()) == null
                 || !liveContentsBloomFilterMap.get(content.getId()).mightContain(content));
-    NessieApiV1 api = GCUtil.getApi(gcParams.getNessieClientConfigs());
     try {
       Iterator<Content> iterator =
           StreamingUtil.getCommitLogStream(
@@ -294,11 +291,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
       return new Iterator<Row>() {
         @Override
         public boolean hasNext() {
-          boolean hasNext = iterator.hasNext();
-          if (!hasNext) {
-            api.close();
-          }
-          return hasNext;
+          return iterator.hasNext();
         }
 
         @Override
@@ -306,14 +299,8 @@ public class IdentifyContentsPerExecutor implements Serializable {
           return fillRow(reference, iterator.next(), runId, startedAt);
         }
       };
-    } catch (Exception e) {
-      api.close();
-      if (e instanceof NessieNotFoundException) {
-        throw new RuntimeException(e);
-      } else {
-        LOGGER.error("Error in walkAllCommitsInReference:", e);
-        return Collections.emptyIterator();
-      }
+    } catch (NessieNotFoundException e) {
+      throw new RuntimeException(e);
     }
   }
 

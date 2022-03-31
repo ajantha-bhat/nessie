@@ -27,6 +27,7 @@ import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalyst.encoders.RowEncoder;
+import org.projectnessie.client.api.NessieApiV1;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,12 +56,12 @@ public class DistributedIdentifyContents {
    * @return map of {@link ContentBloomFilter} per content-id.
    */
   public Map<String, ContentBloomFilter> getLiveContentsBloomFilters(
-      List<String> references, long bloomFilterSize, Map<String, Instant> droppedRefTimeMap) {
+      List<String> references, long bloomFilterSize, Map<String, Instant> droppedRefTimeMap, NessieApiV1 api) {
     IdentifyContentsPerExecutor executor = new IdentifyContentsPerExecutor(gcParams);
     List<Map<String, ContentBloomFilter>> bloomFilterMaps =
         new JavaSparkContext(session.sparkContext())
             .parallelize(references, getPartitionsCount(gcParams, references))
-            .map(executor.computeLiveContentsFunc(bloomFilterSize, droppedRefTimeMap))
+            .map(executor.computeLiveContentsFunc(bloomFilterSize, droppedRefTimeMap, api))
             .collect();
     return mergeLiveContentResults(bloomFilterMaps, gcParams.getBloomFilterFpp());
   }
@@ -74,7 +75,7 @@ public class DistributedIdentifyContents {
    * @return current run id of the completed gc task
    */
   public String identifyExpiredContents(
-      Map<String, ContentBloomFilter> liveContentsBloomFilterMap, List<String> references) {
+      Map<String, ContentBloomFilter> liveContentsBloomFilterMap, List<String> references, NessieApiV1 api) {
     String runId = UUID.randomUUID().toString();
     Timestamp startedAt = Timestamp.from(Instant.now());
     IdentifiedResultsRepo identifiedResultsRepo =
@@ -88,7 +89,7 @@ public class DistributedIdentifyContents {
         session
             .createDataset(references, Encoders.STRING())
             .mapPartitions(
-                executor.getExpiredContentRowsFunc(liveContentsBloomFilterMap, runId, startedAt),
+                executor.getExpiredContentRowsFunc(liveContentsBloomFilterMap, runId, startedAt, api),
                 RowEncoder.apply(identifiedResultsRepo.getSchema()));
     identifiedResultsRepo.writeToOutputTable(rowDataset);
     return runId;

@@ -41,19 +41,10 @@ import org.slf4j.LoggerFactory;
  * Encapsulates the logic to retrieve expired contents by walking over all commits in all
  * named-references.
  */
-public class GCImpl {
+public final class GCImpl {
   private static final Logger LOGGER = LoggerFactory.getLogger(GCImpl.class);
-  private final GCParams gcParams;
 
-  /**
-   * Instantiates a new GCImpl.
-   *
-   * @param gcParams GC configuration params
-   */
-  public GCImpl(GCParams gcParams) {
-    this.gcParams = gcParams;
-    LOGGER.info("GCImpl with params: {}", gcParams);
-  }
+  static NessieApiV1 api;
 
   /**
    * Identify the expired contents using a two-step traversal algorithm.
@@ -96,11 +87,12 @@ public class GCImpl {
    * @param session spark session for distributed computation
    * @return current run id of the completed gc task
    */
-  public String identifyExpiredContents(SparkSession session) {
+  public static String identifyExpiredContents(SparkSession session, GCParams gcParams) {
     DistributedIdentifyContents distributedIdentifyContents;
     List<String> allRefs;
     Map<String, ContentBloomFilter> liveContentsBloomFilterMap;
-    try (NessieApiV1 api = GCUtil.getApi(gcParams.getNessieClientConfigs())) {
+    try {
+      api = GCUtil.getApi(gcParams.getNessieClientConfigs());
       distributedIdentifyContents = new DistributedIdentifyContents(session, gcParams);
       List<Reference> liveReferences = api.getAllReferences().get().getReferences();
       Map<String, Instant> droppedReferenceTimeMap = collectDeadReferences(api);
@@ -119,14 +111,16 @@ public class GCImpl {
       // Identify the live contents and return the bloom filter per content-id
       liveContentsBloomFilterMap =
           distributedIdentifyContents.getLiveContentsBloomFilters(
-              allRefs, bloomFilterSize, droppedReferenceTimeMap);
+              allRefs, bloomFilterSize, droppedReferenceTimeMap, api);
       getOrCreateEmptyBranch(api, gcParams.getOutputBranchName());
+      // Identify the expired contents
+      return distributedIdentifyContents.identifyExpiredContents(liveContentsBloomFilterMap, allRefs, api);
+    } finally {
+      api.close();
     }
-    // Identify the expired contents
-    return distributedIdentifyContents.identifyExpiredContents(liveContentsBloomFilterMap, allRefs);
   }
 
-  private long getTotalCommitsInDefaultReference(NessieApiV1 api) {
+  private static long getTotalCommitsInDefaultReference(NessieApiV1 api) {
     ReferenceMetadata defaultRefMetadata;
     try {
       defaultRefMetadata =
