@@ -55,7 +55,6 @@ public abstract class AbstractIdentifyProcedure extends AbstractRestGCTest {
       Instant cutoffTimeStamp,
       Map<String, Instant> cutOffTimeStampPerRef,
       List<Row> expectedDataSet,
-      boolean disableCommitProtection,
       Instant deadReferenceCutoffTime) {
     try (SparkSession session = getSparkSession()) {
       String runId =
@@ -66,7 +65,6 @@ public abstract class AbstractIdentifyProcedure extends AbstractRestGCTest {
               prefix + "." + GC_TABLE_NAME,
               getUri().toString(),
               cutoffTimeStamp,
-              disableCommitProtection,
               deadReferenceCutoffTime,
               cutOffTimeStampPerRef);
       IdentifiedResultsRepo actualIdentifiedResultsRepo =

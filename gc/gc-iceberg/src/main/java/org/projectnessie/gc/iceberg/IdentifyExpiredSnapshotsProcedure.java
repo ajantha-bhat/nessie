@@ -15,7 +15,6 @@
  */
 package org.projectnessie.gc.iceberg;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -65,7 +64,6 @@ public class IdentifyExpiredSnapshotsProcedure extends BaseGcProcedure {
         // Hint: this is in microsecond precision because of Spark's TimestampType
         ProcedureParameter.optional("dead_reference_cut_off_timestamp", DataTypes.TimestampType),
         ProcedureParameter.optional("spark_partitions_count", DataTypes.IntegerType),
-        ProcedureParameter.optional("commit_protection_time_in_hours", DataTypes.IntegerType),
         ProcedureParameter.optional("bloom_filter_expected_entries", DataTypes.LongType),
         ProcedureParameter.optional("bloom_filter_fpp", DataTypes.DoubleType)
       };
@@ -136,13 +134,10 @@ public class IdentifyExpiredSnapshotsProcedure extends BaseGcProcedure {
       paramsBuilder.sparkPartitionsCount(internalRow.getInt(7));
     }
     if (!internalRow.isNullAt(8)) {
-      paramsBuilder.commitProtectionDuration(Duration.ofHours(internalRow.getInt(8)));
+      paramsBuilder.bloomFilterExpectedEntries(internalRow.getLong(8));
     }
     if (!internalRow.isNullAt(9)) {
-      paramsBuilder.bloomFilterExpectedEntries(internalRow.getLong(9));
-    }
-    if (!internalRow.isNullAt(10)) {
-      paramsBuilder.bloomFilterFpp(internalRow.getDouble(10));
+      paramsBuilder.bloomFilterFpp(internalRow.getDouble(9));
     }
     GCImpl gcImpl = new GCImpl(paramsBuilder.build());
     String runId = gcImpl.identifyExpiredContents(spark());

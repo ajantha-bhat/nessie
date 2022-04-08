@@ -61,10 +61,8 @@ final class ProcedureTestUtil {
       String tableIdentifier,
       String uri,
       Instant cutoffTimeStamp,
-      boolean disableCommitProtection,
       Instant deadReferenceCutoffTime,
       Map<String, Instant> cutOffTimeStampPerRef) {
-    int commitProtectionTimeInHours = disableCommitProtection ? 0 : 2;
     // Example Query:
     // CALL nessie.nessie_gc.identify_expired_snapshots(
     //  default_cut_off_timestamp => 1647391705,
@@ -72,7 +70,6 @@ final class ProcedureTestUtil {
     //  output_branch_name => 'gcRef',
     //  output_table_identifier => 'singleRefRenameTableBeforeCutoff.gc_results',
     //  nessie_client_configurations => map('nessie.uri','http://localhost:51429/'),
-    //  commit_protection_time_in_hours => 0,
     //  bloom_filter_expected_entries => 5)
     StringBuilder sb = new StringBuilder();
     String commonParams =
@@ -83,7 +80,6 @@ final class ProcedureTestUtil {
                 + "output_branch_name => '%s', "
                 + "output_table_identifier => '%s', "
                 + "nessie_client_configurations => map('%s','%s'), "
-                + "commit_protection_time_in_hours => %d, "
                 + "bloom_filter_expected_entries => %d",
             catalogName,
             NAMESPACE,
@@ -95,7 +91,6 @@ final class ProcedureTestUtil {
             tableIdentifier,
             CONF_NESSIE_URI,
             uri,
-            commitProtectionTimeInHours,
             500);
     sb.append(commonParams);
     if (deadReferenceCutoffTime != null) {

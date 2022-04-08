@@ -88,13 +88,7 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
 
       Dataset<Row> dataset =
           performGc(
-              sparkSession,
-              prefix,
-              cutoffTime,
-              Collections.emptyMap(),
-              expectedExpired,
-              true,
-              null);
+              sparkSession, prefix, cutoffTime, Collections.emptyMap(), expectedExpired, null);
 
       performExpiry(prefix, sparkSession, perContentId(dataset), true);
     }
@@ -157,13 +151,7 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
 
       Dataset<Row> dataset =
           performGc(
-              sparkSession,
-              prefix,
-              cutoffTime,
-              Collections.emptyMap(),
-              expectedExpired,
-              true,
-              null);
+              sparkSession, prefix, cutoffTime, Collections.emptyMap(), expectedExpired, null);
 
       performExpiry(prefix, sparkSession, perContentId(dataset), false);
     }
@@ -215,13 +203,7 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
 
       Dataset<Row> dataset =
           performGc(
-              sparkSession,
-              prefix,
-              cutoffTime,
-              Collections.emptyMap(),
-              expectedExpired,
-              true,
-              null);
+              sparkSession, prefix, cutoffTime, Collections.emptyMap(), expectedExpired, null);
 
       performExpiry(prefix, sparkSession, perContentId(dataset), false);
     }
@@ -259,7 +241,6 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
       Instant cutoffTimeStamp,
       Map<String, Instant> cutOffTimeStampPerRef,
       List<Row> expectedDataSet,
-      boolean disableCommitProtection,
       Instant deadReferenceCutoffTime) {
     String runId =
         ProcedureTestUtil.performGcWithProcedure(
@@ -269,7 +250,6 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
             prefix + "." + GC_TABLE,
             getUri().toString(),
             cutoffTimeStamp,
-            disableCommitProtection,
             deadReferenceCutoffTime,
             cutOffTimeStampPerRef);
     IdentifiedResultsRepo actualIdentifiedResultsRepo =
