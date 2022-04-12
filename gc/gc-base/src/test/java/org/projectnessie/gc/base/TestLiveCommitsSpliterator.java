@@ -44,9 +44,11 @@ public class TestLiveCommitsSpliterator {
     MutableBoolean foundAllCommitHeads = new MutableBoolean(false);
     Consumer<LogResponse.LogEntry> commitHandler =
         entry -> commitHandler(entry, foundAllCommitHeads, 8, traversedCommits);
-    GCUtil.traverseLiveCommits(foundAllCommitHeads, allCommits.stream(), commitHandler);
+    String lastTraversedCommit =
+        GCUtil.traverseLiveCommits(foundAllCommitHeads, allCommits.stream(), commitHandler);
     // stop at index. So should traverse only first two commit.
     assertThat(allCommits.subList(0, 2)).isEqualTo(traversedCommits);
+    assertThat(lastTraversedCommit).isEqualTo(allCommits.get(1).getCommitMeta().getHash());
   }
 
   @Test
@@ -58,9 +60,12 @@ public class TestLiveCommitsSpliterator {
     MutableBoolean foundAllCommitHeads = new MutableBoolean(false);
     Consumer<LogResponse.LogEntry> commitHandler =
         entry -> commitHandler(entry, foundAllCommitHeads, 12, traversedCommits);
-    GCUtil.traverseLiveCommits(foundAllCommitHeads, allCommits.stream(), commitHandler);
+    String lastTraversedCommit =
+        GCUtil.traverseLiveCommits(foundAllCommitHeads, allCommits.stream(), commitHandler);
     // must traverse all commits as everything is live
     assertThat(allCommits).isEqualTo(traversedCommits);
+    assertThat(lastTraversedCommit)
+        .isEqualTo(allCommits.get(allCommits.size() - 1).getCommitMeta().getHash());
   }
 
   private List<LogResponse.LogEntry> generateCommits(int num) {

@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Spliterator;
 import java.util.Spliterators;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -40,6 +41,8 @@ import org.projectnessie.error.NessieNotFoundException;
 import org.projectnessie.model.Branch;
 import org.projectnessie.model.LogResponse;
 import org.projectnessie.model.Reference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import scala.Tuple2;
 
 public final class GCUtil {
@@ -47,6 +50,7 @@ public final class GCUtil {
   private GCUtil() {}
 
   private static final ObjectMapper objectMapper = new ObjectMapper();
+  private static final Logger LOGGER = LoggerFactory.getLogger(GCUtil.class);
 
   /** Serialize {@link Reference} object using JSON Serialization. */
   public static String serializeReference(Reference reference) {
@@ -146,11 +150,14 @@ public final class GCUtil {
    * @param foundAllLiveCommitHeadsBeforeCutoffTime condition to stop traversing
    * @param commits stream of {@link LogResponse.LogEntry}
    * @param commitHandler consumer of {@link LogResponse.LogEntry}
+   * @return last visited commit hash. It is the next commit hash after finding all the live
+   *     contents head.
    */
-  static void traverseLiveCommits(
+  static String traverseLiveCommits(
       MutableBoolean foundAllLiveCommitHeadsBeforeCutoffTime,
       Stream<LogResponse.LogEntry> commits,
       Consumer<LogResponse.LogEntry> commitHandler) {
+    AtomicReference<String> lastVisitedHash = new AtomicReference<>();
     Spliterator<LogResponse.LogEntry> src = commits.spliterator();
     // Use a Spliterator to limit the processed commits to the "live" commits - i.e. stop traversing
     // the expired commits once an entry is seen for each live content key.
@@ -168,15 +175,19 @@ public final class GCUtil {
                   if (foundAllLiveCommitHeadsBeforeCutoffTime.isTrue()) {
                     // can stop traversing as found all the live commit heads
                     // for each live keys before cutoff time.
-                    more = false;
+                    LOGGER.error(
+                        "### Found all the commits at {}", logEntry.getCommitMeta().getHash());
                   } else {
                     // process this commit entry.
                     action.accept(logEntry);
                   }
+                  lastVisitedHash.set(logEntry.getCommitMeta().getHash());
                 });
+        more = more && foundAllLiveCommitHeadsBeforeCutoffTime.isFalse();
         return more;
       }
     }.forEachRemaining(commitHandler);
+    return lastVisitedHash.get();
   }
 
   private static Map<String, String> catalogConfWithRef(

@@ -18,15 +18,19 @@ package org.projectnessie.gc.base;
 import java.io.Serializable;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.commons.lang3.mutable.MutableBoolean;
 import org.apache.spark.TaskContext;
@@ -63,7 +67,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
     this.gcParams = gcParams;
   }
 
-  protected Function<String, Map<String, ContentBloomFilter>> computeLiveContentsFunc(
+  protected Function<String, LiveContentsResult> computeLiveContentsFunc(
       long bloomFilterSize, Map<String, Instant> droppedRefTimeMap) {
     return reference ->
         computeLiveContents(
@@ -78,14 +82,20 @@ public class IdentifyContentsPerExecutor implements Serializable {
           Map<String, ContentBloomFilter> liveContentsBloomFilterMap,
           String runId,
           Timestamp startedAt,
-          Map<String, Instant> droppedRefTimeMap) {
+          Map<String, Instant> droppedRefTimeMap,
+          Map<String, String> commitCheckPoints) {
     return result ->
         getExpiredContentRows(
-            result, liveContentsBloomFilterMap, runId, startedAt, droppedRefTimeMap);
+            result,
+            liveContentsBloomFilterMap,
+            runId,
+            startedAt,
+            droppedRefTimeMap,
+            commitCheckPoints);
   }
 
   // --- Methods for computing live content bloom filter ----------
-  private Map<String, ContentBloomFilter> computeLiveContents(
+  private LiveContentsResult computeLiveContents(
       Instant cutOffTimestamp, String reference, Instant droppedRefTime, long bloomFilterSize) {
     NessieApiV1 api = GCUtil.getApi(gcParams.getNessieClientConfigs());
     TaskContext.get()
@@ -94,12 +104,31 @@ public class IdentifyContentsPerExecutor implements Serializable {
               LOGGER.info("Closing the nessie api for compute live contents task");
               api.close();
             });
+    LOGGER.error("### computing live contents for {}", reference);
+    Reference ref = GCUtil.deserializeReference(reference);
+    try {
+      List<String> collect =
+          api.getCommitLog().reference(Detached.of(ref.getHash())).get().getLogEntries().stream()
+              .map(LogResponse.LogEntry::getCommitMeta)
+              .map(CommitMeta::getHash)
+              .collect(Collectors.toList());
+
+      LOGGER.error("### commit hashes for ref: {} head: {}", ref.getName(), collect);
+    } catch (NessieNotFoundException e) {
+      e.printStackTrace();
+    }
+
     boolean isRefDroppedAfterCutoffTimeStamp =
         droppedRefTime == null || droppedRefTime.compareTo(cutOffTimestamp) >= 0;
     if (!isRefDroppedAfterCutoffTimeStamp) {
       // reference is dropped before cutoff time.
       // All the contents for all the keys are expired.
-      return new HashMap<>();
+      return ImmutableLiveContentsResult.builder()
+          .lastLiveCommitHash(ref.getHash())
+          .referenceName(ref.getName())
+          .hashOnReference(ref.getHash())
+          .bloomFilterPerContentId(Collections.emptyMap())
+          .build();
     }
     Predicate<CommitMeta> liveCommitPredicate =
         commitMeta ->
@@ -110,7 +139,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
     ImmutableGCStateParamsPerTask gcStateParamsPerTask =
         ImmutableGCStateParamsPerTask.builder()
             .api(api)
-            .reference(GCUtil.deserializeReference(reference))
+            .reference(ref)
             .liveCommitPredicate(liveCommitPredicate)
             .bloomFilterSize(bloomFilterSize)
             .build();
@@ -118,10 +147,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
     return walkLiveCommitsInReference(gcStateParamsPerTask);
   }
 
-  private Map<String, ContentBloomFilter> walkLiveCommitsInReference(
-      GCStateParamsPerTask gcStateParamsPerTask) {
-    Map<String, ContentBloomFilter> bloomFilterMap = new HashMap<>();
-    Set<ContentKey> liveContentKeys = new HashSet<>();
+  private LiveContentsResult walkLiveCommitsInReference(GCStateParamsPerTask gcStateParamsPerTask) {
     try (Stream<LogResponse.LogEntry> commits =
         StreamingUtil.getCommitLogStream(
             gcStateParamsPerTask.getApi(),
@@ -131,6 +157,8 @@ public class IdentifyContentsPerExecutor implements Serializable {
                     .refName(Detached.REF_NAME)
                     .fetch(FetchOption.ALL),
             OptionalInt.empty())) {
+      Map<String, ContentBloomFilter> bloomFilterMap = new HashMap<>();
+      Set<ContentKey> liveContentKeys = new HashSet<>();
       MutableBoolean foundAllLiveCommitHeadsBeforeCutoffTime = new MutableBoolean(false);
       // commit handler for the spliterator
       Consumer<LogResponse.LogEntry> commitHandler =
@@ -142,11 +170,22 @@ public class IdentifyContentsPerExecutor implements Serializable {
                   foundAllLiveCommitHeadsBeforeCutoffTime,
                   liveContentKeys);
       // traverse commits using the spliterator
-      GCUtil.traverseLiveCommits(foundAllLiveCommitHeadsBeforeCutoffTime, commits, commitHandler);
+      String lastVisitedHash =
+          GCUtil.traverseLiveCommits(
+              foundAllLiveCommitHeadsBeforeCutoffTime, commits, commitHandler);
+      LOGGER.error(
+          "### FOr the reference {} last traversed commit {}",
+          gcStateParamsPerTask.getReference().getName(),
+          lastVisitedHash);
+      return ImmutableLiveContentsResult.builder()
+          .lastLiveCommitHash(lastVisitedHash)
+          .referenceName(gcStateParamsPerTask.getReference().getName())
+          .hashOnReference(gcStateParamsPerTask.getReference().getHash())
+          .bloomFilterPerContentId(bloomFilterMap)
+          .build();
     } catch (NessieNotFoundException e) {
       throw new RuntimeException(e);
     }
-    return bloomFilterMap;
   }
 
   private void handleLiveCommit(
@@ -237,7 +276,8 @@ public class IdentifyContentsPerExecutor implements Serializable {
       Map<String, ContentBloomFilter> liveContentsBloomFilterMap,
       String runId,
       Timestamp startedAt,
-      Map<String, Instant> droppedRefTimeMap) {
+      Map<String, Instant> droppedRefTimeMap,
+      Map<String, String> commitCheckPoints) {
     NessieApiV1 api = GCUtil.getApi(gcParams.getNessieClientConfigs());
     TaskContext.get()
         .addTaskCompletionListener(
@@ -246,16 +286,19 @@ public class IdentifyContentsPerExecutor implements Serializable {
               api.close();
             });
     return references.flatMap(
-        reference ->
-            JavaConverters.asScalaIterator(
-                    walkAllCommitsInReference(
-                        api,
-                        GCUtil.deserializeReference(reference),
-                        liveContentsBloomFilterMap,
-                        runId,
-                        startedAt,
-                        getCutoffTimeForRef(reference, droppedRefTimeMap)))
-                .toTraversable());
+        reference -> {
+          Reference ref = GCUtil.deserializeReference(reference);
+          return JavaConverters.asScalaIterator(
+                  walkAllCommitsInReference(
+                      api,
+                      ref,
+                      liveContentsBloomFilterMap,
+                      runId,
+                      startedAt,
+                      getCutoffTimeForRef(reference, droppedRefTimeMap),
+                      commitCheckPoints.get(ref.getName())))
+              .toTraversable();
+        });
   }
 
   private Iterator<Row> walkAllCommitsInReference(
@@ -264,7 +307,8 @@ public class IdentifyContentsPerExecutor implements Serializable {
       Map<String, ContentBloomFilter> liveContentsBloomFilterMap,
       String runId,
       Timestamp startedAt,
-      Instant cutoffTime) {
+      Instant cutoffTime,
+      String commitCheckPoint) {
     // To filter only the commits that are expired based on cutoff time.
     // cutoff time also acts as a commit protection time for ongoing
     // or new commits created after step-1 of identify gc.
@@ -290,7 +334,9 @@ public class IdentifyContentsPerExecutor implements Serializable {
             (content instanceof IcebergTable && ((IcebergTable) content).getSnapshotId() != -1
                 || content instanceof IcebergView && ((IcebergView) content).getVersionId() != -1);
     try {
+      // TODO: need a spliterator based on commit checkpoint
       AtomicReference<String> commitHash = new AtomicReference<>();
+      AtomicBoolean foundCheckPoint = new AtomicBoolean(false);
       Iterator<Content> iterator =
           StreamingUtil.getCommitLogStream(
                   api,
@@ -303,7 +349,17 @@ public class IdentifyContentsPerExecutor implements Serializable {
               .filter(cutoffTimePredicate)
               .map(
                   entry -> {
-                    commitHash.set(entry.getCommitMeta().getHash());
+                    String hash = entry.getCommitMeta().getHash();
+                    commitHash.set(hash);
+                    LOGGER.error(
+                        "### walking reference {} for the hash {} with checkpoint {}",
+                        reference.getName(),
+                        commitHash.get(),
+                        commitCheckPoint);
+                    if (!foundCheckPoint.get()) {
+                      foundCheckPoint.set(
+                          commitCheckPoint != null && commitCheckPoint.equals(hash));
+                    }
                     return entry.getOperations();
                   })
               .flatMap(operations -> operations.stream().filter(Operation.Put.class::isInstance))
@@ -320,7 +376,8 @@ public class IdentifyContentsPerExecutor implements Serializable {
       return new Iterator<Row>() {
         @Override
         public boolean hasNext() {
-          return iterator.hasNext();
+          // when the check point is reached, return false so that iterator won't be consumed.
+          return iterator.hasNext() && (!foundCheckPoint.get());
         }
 
         @Override

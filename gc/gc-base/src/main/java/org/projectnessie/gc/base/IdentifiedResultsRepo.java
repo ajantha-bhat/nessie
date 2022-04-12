@@ -52,7 +52,7 @@ public final class IdentifiedResultsRepo {
   private static final String COL_HASH_ON_REFERENCE = "hashOnReference";
   private static final String COL_COMMIT_HASH = "commitHash";
 
-  private final Schema icebergSchema =
+  private static final Schema icebergSchema =
       new Schema(
           Types.StructType.of(
                   // GC run start timestamp.
@@ -73,7 +73,7 @@ public final class IdentifiedResultsRepo {
                   optional(8, COL_COMMIT_HASH, Types.StringType.get()))
               .fields());
 
-  private final StructType schema = SparkSchemaUtil.convert(icebergSchema);
+  private static final StructType schema = SparkSchemaUtil.convert(icebergSchema);
 
   private final SparkSession sparkSession;
   private final String catalogAndTableWithRefName;
@@ -85,7 +85,7 @@ public final class IdentifiedResultsRepo {
     createTableIfAbsent(sparkSession, catalog, TableIdentifier.parse(gcTableIdentifier), gcRefName);
   }
 
-  public StructType getSchema() {
+  public static StructType getSchema() {
     return schema;
   }
 

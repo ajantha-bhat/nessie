@@ -113,6 +113,7 @@ public abstract class AbstractRestGC extends AbstractRest {
               .defaultCutOffTimestamp(cutoffTimeStamp)
               .nessieCatalogName("nessie")
               .outputBranchName("gcBranch")
+              .gcCheckPointTableIdentifier(prefix + ".gc_checkpoint")
               .outputTableIdentifier(prefix + ".gc_results")
               .build();
       GCImpl gc = new GCImpl(gcParams);
@@ -127,8 +128,7 @@ public abstract class AbstractRestGC extends AbstractRest {
       Dataset<Row> actualRowDataset =
           actualIdentifiedResultsRepo.collectExpiredContentsAsDataSet(runId);
       // compare the expected contents against the actual gc output
-      verify(
-          actualRowDataset, expectedDataSet, sparkSession, actualIdentifiedResultsRepo.getSchema());
+      verify(actualRowDataset, expectedDataSet, sparkSession, IdentifiedResultsRepo.getSchema());
     }
   }
 

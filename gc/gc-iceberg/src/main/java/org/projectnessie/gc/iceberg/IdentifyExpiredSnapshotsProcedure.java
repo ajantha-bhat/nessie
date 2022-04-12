@@ -54,6 +54,7 @@ public class IdentifyExpiredSnapshotsProcedure extends BaseGcProcedure {
         ProcedureParameter.required("nessie_catalog_name", DataTypes.StringType),
         ProcedureParameter.required("output_branch_name", DataTypes.StringType),
         ProcedureParameter.required("output_table_identifier", DataTypes.StringType),
+        ProcedureParameter.required("checkpoint_table_identifier", DataTypes.StringType),
         ProcedureParameter.required(
             "nessie_client_configurations",
             DataTypes.createMapType(DataTypes.StringType, DataTypes.StringType)),
@@ -106,8 +107,9 @@ public class IdentifyExpiredSnapshotsProcedure extends BaseGcProcedure {
     paramsBuilder.nessieCatalogName(internalRow.getString(1));
     paramsBuilder.outputBranchName(internalRow.getString(2));
     paramsBuilder.outputTableIdentifier(internalRow.getString(3));
+    paramsBuilder.gcCheckPointTableIdentifier(internalRow.getString(4));
 
-    MapData map = internalRow.getMap(4);
+    MapData map = internalRow.getMap(5);
     Map<String, String> nessieClientConfig = new HashMap<>();
     for (int i = 0; i < map.numElements(); i++) {
       nessieClientConfig.put(
@@ -115,8 +117,8 @@ public class IdentifyExpiredSnapshotsProcedure extends BaseGcProcedure {
     }
     paramsBuilder.nessieClientConfigs(nessieClientConfig);
 
-    if (!internalRow.isNullAt(5)) {
-      map = internalRow.getMap(5);
+    if (!internalRow.isNullAt(6)) {
+      map = internalRow.getMap(6);
       Map<String, Instant> perReferenceCutoffs = new HashMap<>();
       for (int i = 0; i < map.numElements(); i++) {
         String refName = map.keyArray().getUTF8String(i).toString();
@@ -126,18 +128,18 @@ public class IdentifyExpiredSnapshotsProcedure extends BaseGcProcedure {
       paramsBuilder.cutOffTimestampPerRef(perReferenceCutoffs);
     }
 
-    if (!internalRow.isNullAt(6)) {
-      paramsBuilder.deadReferenceCutOffTimeStamp(
-          GCUtil.getInstantFromMicros(internalRow.getLong(6)));
-    }
     if (!internalRow.isNullAt(7)) {
-      paramsBuilder.sparkPartitionsCount(internalRow.getInt(7));
+      paramsBuilder.deadReferenceCutOffTimeStamp(
+          GCUtil.getInstantFromMicros(internalRow.getLong(7)));
     }
     if (!internalRow.isNullAt(8)) {
-      paramsBuilder.bloomFilterExpectedEntries(internalRow.getLong(8));
+      paramsBuilder.sparkPartitionsCount(internalRow.getInt(8));
     }
     if (!internalRow.isNullAt(9)) {
-      paramsBuilder.bloomFilterFpp(internalRow.getDouble(9));
+      paramsBuilder.bloomFilterExpectedEntries(internalRow.getLong(9));
+    }
+    if (!internalRow.isNullAt(10)) {
+      paramsBuilder.bloomFilterFpp(internalRow.getDouble(10));
     }
     GCImpl gcImpl = new GCImpl(paramsBuilder.build());
     String runId = gcImpl.identifyExpiredContents(spark());

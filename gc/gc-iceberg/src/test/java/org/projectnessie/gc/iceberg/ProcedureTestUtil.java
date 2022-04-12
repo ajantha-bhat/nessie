@@ -58,7 +58,8 @@ final class ProcedureTestUtil {
       SparkSession sparkSession,
       String catalogName,
       String gcBranchName,
-      String tableIdentifier,
+      String outputTableIdentifier,
+      String checkpointTableIdentifier,
       String uri,
       Instant cutoffTimeStamp,
       Instant deadReferenceCutoffTime,
@@ -69,6 +70,7 @@ final class ProcedureTestUtil {
     //  nessie_catalog_name => 'nessie',
     //  output_branch_name => 'gcRef',
     //  output_table_identifier => 'singleRefRenameTableBeforeCutoff.gc_results',
+    //  checkpoint_table_identifier => 'singleRefRenameTableBeforeCutoff.gc_checkpoint',
     //  nessie_client_configurations => map('nessie.uri','http://localhost:51429/'),
     //  bloom_filter_expected_entries => 5)
     StringBuilder sb = new StringBuilder();
@@ -79,6 +81,7 @@ final class ProcedureTestUtil {
                 + "nessie_catalog_name => '%s', "
                 + "output_branch_name => '%s', "
                 + "output_table_identifier => '%s', "
+                + "checkpoint_table_identifier => '%s', "
                 + "nessie_client_configurations => map('%s','%s'), "
                 + "bloom_filter_expected_entries => %d",
             catalogName,
@@ -88,7 +91,8 @@ final class ProcedureTestUtil {
             Timestamp.from(cutoffTimeStamp),
             catalogName,
             gcBranchName,
-            tableIdentifier,
+            outputTableIdentifier,
+            checkpointTableIdentifier,
             CONF_NESSIE_URI,
             uri,
             500);

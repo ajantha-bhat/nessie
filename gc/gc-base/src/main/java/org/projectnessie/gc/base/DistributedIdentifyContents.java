@@ -17,10 +17,10 @@ package org.projectnessie.gc.base;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Encoders;
@@ -52,17 +52,37 @@ public class DistributedIdentifyContents {
    * @param references list of all the references (JSON serialized)
    * @param bloomFilterSize size of bloom filter to be used
    * @param droppedRefTimeMap map of dropped time for reference@hash (JSON serialized)
+   * @param runId current run id of the gc
+   * @param startedAt gc start time
    * @return map of {@link ContentBloomFilter} per content-id.
    */
   public Map<String, ContentBloomFilter> getLiveContentsBloomFilters(
-      List<String> references, long bloomFilterSize, Map<String, Instant> droppedRefTimeMap) {
+      List<String> references,
+      long bloomFilterSize,
+      Map<String, Instant> droppedRefTimeMap,
+      String runId,
+      Timestamp startedAt) {
     IdentifyContentsPerExecutor executor = new IdentifyContentsPerExecutor(gcParams);
-    List<Map<String, ContentBloomFilter>> bloomFilterMaps =
+    List<LiveContentsResult> liveContentsResults =
         new JavaSparkContext(session.sparkContext())
             .parallelize(references, getPartitionsCount(gcParams, references))
             .map(executor.computeLiveContentsFunc(bloomFilterSize, droppedRefTimeMap))
             .collect();
-    return mergeLiveContentResults(bloomFilterMaps, gcParams.getBloomFilterFpp());
+    List<Map<String, ContentBloomFilter>> filters = new ArrayList<>();
+    List<Row> checkPointRows = new ArrayList<>();
+    liveContentsResults.forEach(
+        result -> {
+          filters.add(result.getBloomFilterPerContentId());
+          checkPointRows.add(GCCheckPointRepo.createCheckPointRow(runId, startedAt, result));
+        });
+    GCCheckPointRepo gcCheckPointRepo =
+        new GCCheckPointRepo(
+            session,
+            gcParams.getNessieCatalogName(),
+            gcParams.getOutputBranchName(),
+            gcParams.getGcCheckPointTableIdentifier());
+    gcCheckPointRepo.writeToOutputTable(checkPointRows);
+    return mergeLiveContentResults(filters, gcParams.getBloomFilterFpp());
   }
 
   /**
@@ -72,14 +92,24 @@ public class DistributedIdentifyContents {
    * @param liveContentsBloomFilterMap live contents bloom filter per content id.
    * @param references list of all the references (JSON serialized) to walk (live and dead)
    * @param droppedRefTimeMap map of dropped time for reference@hash (JSON serialized)
+   * @param runId current run id of the GC
+   * @param startedAt GC start time
    * @return current run id of the completed gc task
    */
   public String identifyExpiredContents(
       Map<String, ContentBloomFilter> liveContentsBloomFilterMap,
       List<String> references,
-      Map<String, Instant> droppedRefTimeMap) {
-    String runId = UUID.randomUUID().toString();
-    Timestamp startedAt = Timestamp.from(Instant.now());
+      Map<String, Instant> droppedRefTimeMap,
+      String runId,
+      Timestamp startedAt) {
+    GCCheckPointRepo gcCheckPointRepo =
+        new GCCheckPointRepo(
+            session,
+            gcParams.getNessieCatalogName(),
+            gcParams.getOutputBranchName(),
+            gcParams.getGcCheckPointTableIdentifier());
+    Map<String, String> commitCheckPoints = gcCheckPointRepo.collectCommitCheckPoint();
+
     IdentifiedResultsRepo identifiedResultsRepo =
         new IdentifiedResultsRepo(
             session,
@@ -92,8 +122,12 @@ public class DistributedIdentifyContents {
             .createDataset(references, Encoders.STRING())
             .mapPartitions(
                 executor.getExpiredContentRowsFunc(
-                    liveContentsBloomFilterMap, runId, startedAt, droppedRefTimeMap),
-                RowEncoder.apply(identifiedResultsRepo.getSchema()));
+                    liveContentsBloomFilterMap,
+                    runId,
+                    startedAt,
+                    droppedRefTimeMap,
+                    commitCheckPoints),
+                RowEncoder.apply(IdentifiedResultsRepo.getSchema()));
     identifiedResultsRepo.writeToOutputTable(rowDataset);
     return runId;
   }

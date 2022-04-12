@@ -49,7 +49,9 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
 
   static final String CATALOG_NAME = "nessie";
   static final String GC_BRANCH_NAME = "gcRef";
-  static final String GC_TABLE = "gc_results";
+  static final String GC_EXPIRE_BRANCH_NAME = "someExpireRef";
+  static final String GC_OUTPUT_TABLE_NAME = "gc_results";
+  static final String GC_CHECK_POINT_TABLE_NAME = "gc_checkpoint";
   static final String GC_SPARK_CATALOG = "org.projectnessie.gc.iceberg.NessieIcebergGcSparkCatalog";
 
   static final String TABLE_ONE = "table_1";
@@ -87,7 +89,7 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
       Instant cutoffTime = Instant.now();
 
       Dataset<Row> dataset =
-          performGc(
+          performGcAndVerify(
               sparkSession, prefix, cutoffTime, Collections.emptyMap(), expectedExpired, null);
 
       performExpiry(prefix, sparkSession, perContentId(dataset), true);
@@ -150,7 +152,7 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
       commit(sparkSession, CATALOG_NAME, prefix, TABLE_ONE);
 
       Dataset<Row> dataset =
-          performGc(
+          performGcAndVerify(
               sparkSession, prefix, cutoffTime, Collections.emptyMap(), expectedExpired, null);
 
       performExpiry(prefix, sparkSession, perContentId(dataset), false);
@@ -202,10 +204,66 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
       Instant cutoffTime = Instant.now();
 
       Dataset<Row> dataset =
-          performGc(
+          performGcAndVerify(
               sparkSession, prefix, cutoffTime, Collections.emptyMap(), expectedExpired, null);
 
       performExpiry(prefix, sparkSession, perContentId(dataset), false);
+    }
+  }
+
+  @Test
+  public void testCheckPoint() {
+    // ------  Time ---- | --- branch1 --------------|
+    //         t0        | Create branch             |
+    //         t1        | TABLE_ONE : ID_1 (expired)|
+    //         t2        | TABLE_ONE : ID_2 (expired)|
+    //         t3        | TABLE_ONE : ID_3          |
+    //         t4        |-- cut off time -----------|
+    String prefix = "checkpoint";
+    String branch1 = prefix + "_1";
+    try (SparkSession sparkSession = getSparkSession()) {
+      ProcedureTestUtil.createBranch(sparkSession, CATALOG_NAME, branch1, "main");
+      useReference(sparkSession, CATALOG_NAME, branch1);
+      createTable(sparkSession, CATALOG_NAME, prefix, TABLE_ONE);
+      commit(sparkSession, CATALOG_NAME, prefix, TABLE_ONE);
+      commit(sparkSession, CATALOG_NAME, prefix, TABLE_ONE);
+
+      List<Row> expectedExpired = new ArrayList<>();
+      fillExpectedContents(Branch.of(branch1, null), 2, expectedExpired);
+
+      commit(sparkSession, CATALOG_NAME, prefix, TABLE_ONE);
+
+      Instant cutoffTime = Instant.now();
+
+      Dataset<Row> dataset =
+          performGcAndVerify(
+              sparkSession, prefix, cutoffTime, Collections.emptyMap(), expectedExpired, null);
+
+      performExpiry(prefix, sparkSession, perContentId(dataset), false);
+      System.out.println("&&&& checkpoint $$$$");
+      Dataset<Row> dataset1 =
+          performGcAndVerify(
+              sparkSession,
+              prefix,
+              cutoffTime,
+              Collections.emptyMap(),
+              Collections.emptyList(),
+              null);
+
+      // clear the checkpoint point
+      useReference(sparkSession, CATALOG_NAME, GC_BRANCH_NAME);
+      dropTable(sparkSession, CATALOG_NAME, prefix, GC_CHECK_POINT_TABLE_NAME);
+
+      // should collect the expired contents from the beginning of time.
+      dataset = performGc(sparkSession, prefix, Instant.now(), Collections.emptyMap(), null);
+      // identify branch and expire branch will have some expired contents.
+      // Expire branch's commit hash is not visible outside as the reference is dropped after
+      // expiry.
+      // Hence, only validate original references.
+      dataset = dataset.filter(dataset.col("referenceName").equalTo("checkpoint_1"));
+      verify(dataset, expectedExpired, sparkSession, IdentifiedResultsRepo.getSchema());
+      // TODO: try to run the expiry, output should be empty.
+      // performExpiry(prefix, sparkSession, sparkSession.emptyDataFrame(), false);
     }
   }
 
@@ -219,23 +277,26 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
                     + "nessie_catalog_name => '%s', "
                     + "output_branch_name => '%s', "
                     + "output_table_identifier => '%s', "
+                    + "checkpoint_table_identifier => '%s', "
                     + "nessie_client_configurations => map('%s','%s'), "
                     + "dry_run => %s)",
                 CATALOG_NAME,
                 NAMESPACE,
                 ExpireSnapshotsProcedure.PROCEDURE_NAME,
                 //
-                "someExpireRef",
+                GC_EXPIRE_BRANCH_NAME,
                 CATALOG_NAME,
                 GC_BRANCH_NAME,
-                prefix + "." + GC_TABLE,
+                prefix + "." + GC_OUTPUT_TABLE_NAME,
+                prefix + "." + GC_CHECK_POINT_TABLE_NAME,
                 CONF_NESSIE_URI,
                 getUri().toString(),
                 dryRun));
+    output.show(200, false);
     verifyExpiry(output, rows, dryRun);
   }
 
-  private Dataset<Row> performGc(
+  private Dataset<Row> performGcAndVerify(
       SparkSession session,
       String prefix,
       Instant cutoffTimeStamp,
@@ -247,17 +308,42 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
             session,
             CATALOG_NAME,
             GC_BRANCH_NAME,
-            prefix + "." + GC_TABLE,
+            prefix + "." + GC_OUTPUT_TABLE_NAME,
+            prefix + "." + GC_CHECK_POINT_TABLE_NAME,
             getUri().toString(),
             cutoffTimeStamp,
             deadReferenceCutoffTime,
             cutOffTimeStampPerRef);
     IdentifiedResultsRepo actualIdentifiedResultsRepo =
-        new IdentifiedResultsRepo(session, CATALOG_NAME, GC_BRANCH_NAME, prefix + "." + GC_TABLE);
+        new IdentifiedResultsRepo(
+            session, CATALOG_NAME, GC_BRANCH_NAME, prefix + "." + GC_OUTPUT_TABLE_NAME);
     Dataset<Row> actualRowDataset =
         actualIdentifiedResultsRepo.collectExpiredContentsAsDataSet(runId);
-    verify(actualRowDataset, expectedDataSet, session, actualIdentifiedResultsRepo.getSchema());
+    verify(actualRowDataset, expectedDataSet, session, IdentifiedResultsRepo.getSchema());
     return actualRowDataset;
+  }
+
+  private Dataset<Row> performGc(
+      SparkSession session,
+      String prefix,
+      Instant cutoffTimeStamp,
+      Map<String, Instant> cutOffTimeStampPerRef,
+      Instant deadReferenceCutoffTime) {
+    String runId =
+        ProcedureTestUtil.performGcWithProcedure(
+            session,
+            CATALOG_NAME,
+            GC_BRANCH_NAME,
+            prefix + "." + GC_OUTPUT_TABLE_NAME,
+            prefix + "." + GC_CHECK_POINT_TABLE_NAME,
+            getUri().toString(),
+            cutoffTimeStamp,
+            deadReferenceCutoffTime,
+            cutOffTimeStampPerRef);
+    IdentifiedResultsRepo actualIdentifiedResultsRepo =
+        new IdentifiedResultsRepo(
+            session, CATALOG_NAME, GC_BRANCH_NAME, prefix + "." + GC_OUTPUT_TABLE_NAME);
+    return actualIdentifiedResultsRepo.collectExpiredContentsAsDataSet(runId);
   }
 
   private Dataset<Row> perContentId(Dataset<Row> rows) {

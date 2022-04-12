@@ -77,6 +77,14 @@ public interface GCParams extends Serializable {
    */
   String getOutputTableIdentifier();
 
+  /**
+   * GC checkpoint table identifier (namespace and table name) to be used for storing the last
+   * traversed commit hash per reference during identify step for a run id.
+   *
+   * <p>Used for identifying the expired contents to avoid traversing all the commits.
+   */
+  String getGcCheckPointTableIdentifier();
+
   @Value.Check
   default void validate() {
     Instant now = Instant.now();

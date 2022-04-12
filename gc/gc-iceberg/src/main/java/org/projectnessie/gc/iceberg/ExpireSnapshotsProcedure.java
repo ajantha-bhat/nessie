@@ -16,6 +16,7 @@
 package org.projectnessie.gc.iceberg;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +48,7 @@ import org.projectnessie.api.params.FetchOption;
 import org.projectnessie.client.api.NessieApiV1;
 import org.projectnessie.error.NessieConflictException;
 import org.projectnessie.error.NessieNotFoundException;
+import org.projectnessie.gc.base.GCCheckPointRepo;
 import org.projectnessie.gc.base.GCUtil;
 import org.projectnessie.gc.base.IdentifiedResultsRepo;
 import org.projectnessie.model.Branch;
@@ -73,6 +75,7 @@ public class ExpireSnapshotsProcedure extends BaseGcProcedure {
         ProcedureParameter.required("nessie_catalog_name", DataTypes.StringType),
         ProcedureParameter.required("output_branch_name", DataTypes.StringType),
         ProcedureParameter.required("output_table_identifier", DataTypes.StringType),
+        ProcedureParameter.required("checkpoint_table_identifier", DataTypes.StringType),
         ProcedureParameter.required(
             "nessie_client_configurations",
             DataTypes.createMapType(DataTypes.StringType, DataTypes.StringType)),
@@ -135,20 +138,22 @@ public class ExpireSnapshotsProcedure extends BaseGcProcedure {
     String expiryBranchName = internalRow.getString(0);
     String gcCatalogName = internalRow.getString(1);
     String gcOutputBranchName = internalRow.getString(2);
-    String gcOutputTableName = internalRow.getString(3);
+    String gcOutputTableIdentifier = internalRow.getString(3);
+    String gcCheckPointTableIdentifier = internalRow.getString(4);
     Map<String, String> nessieClientConfig = new HashMap<>();
-    MapData map = internalRow.getMap(4);
+    MapData map = internalRow.getMap(5);
     for (int i = 0; i < map.numElements(); i++) {
       nessieClientConfig.put(
           map.keyArray().getUTF8String(i).toString(), map.valueArray().getUTF8String(i).toString());
     }
-    String runId = !internalRow.isNullAt(5) ? internalRow.getString(5) : null;
-    boolean dryRun = !internalRow.isNullAt(6) && internalRow.getBoolean(6);
+    String runId = !internalRow.isNullAt(6) ? internalRow.getString(6) : null;
+    boolean dryRun = !internalRow.isNullAt(7) && internalRow.getBoolean(7);
 
     IdentifiedResultsRepo identifiedResultsRepo =
-        new IdentifiedResultsRepo(spark(), gcCatalogName, gcOutputBranchName, gcOutputTableName);
+        new IdentifiedResultsRepo(
+            spark(), gcCatalogName, gcOutputBranchName, gcOutputTableIdentifier);
 
-    runId = updateRunId(gcOutputTableName, runId, identifiedResultsRepo);
+    runId = updateRunId(gcOutputTableIdentifier, runId, identifiedResultsRepo);
 
     Map<String, List<Long>> expiredSnapshotsPerContentId =
         getExpiredSnapshotsPerContentId(runId, identifiedResultsRepo);
@@ -201,7 +206,14 @@ public class ExpireSnapshotsProcedure extends BaseGcProcedure {
                         filesToBeDeleted);
                 outputRows.add(outputRow);
               });
+
       dropExpireProcedureBranch(expiryBranchName, api);
+
+      GCCheckPointRepo gcCheckPointRepo =
+          new GCCheckPointRepo(
+              spark(), gcCatalogName, gcOutputBranchName, gcCheckPointTableIdentifier);
+      Row markerRow = gcCheckPointRepo.createMarkerRow(runId);
+      gcCheckPointRepo.writeToOutputTable(Collections.singletonList(markerRow));
     }
     return outputRows.toArray(new InternalRow[0]);
   }
