@@ -73,15 +73,15 @@ public class DistributedIdentifyContents {
     liveContentsResults.forEach(
         result -> {
           filters.add(result.getBloomFilterPerContentId());
-          checkPointRows.add(GCCheckPointRepo.createCheckPointRow(runId, startedAt, result));
+          checkPointRows.add(IdentifiedResultsRepo.createCheckPointRow(runId, startedAt, result));
         });
-    GCCheckPointRepo gcCheckPointRepo =
-        new GCCheckPointRepo(
+    IdentifiedResultsRepo identifiedResultsRepo =
+        new IdentifiedResultsRepo(
             session,
             gcParams.getNessieCatalogName(),
             gcParams.getOutputBranchName(),
-            gcParams.getGcCheckPointTableIdentifier());
-    gcCheckPointRepo.writeToOutputTable(checkPointRows);
+            gcParams.getOutputTableIdentifier());
+    identifiedResultsRepo.writeToOutputTable(checkPointRows);
     return mergeLiveContentResults(filters, gcParams.getBloomFilterFpp());
   }
 
@@ -102,20 +102,14 @@ public class DistributedIdentifyContents {
       Map<String, Instant> droppedRefTimeMap,
       String runId,
       Timestamp startedAt) {
-    GCCheckPointRepo gcCheckPointRepo =
-        new GCCheckPointRepo(
-            session,
-            gcParams.getNessieCatalogName(),
-            gcParams.getOutputBranchName(),
-            gcParams.getGcCheckPointTableIdentifier());
-    Map<String, String> commitCheckPoints = gcCheckPointRepo.collectLatestCommitCheckPoint();
-
     IdentifiedResultsRepo identifiedResultsRepo =
         new IdentifiedResultsRepo(
             session,
             gcParams.getNessieCatalogName(),
             gcParams.getOutputBranchName(),
             gcParams.getOutputTableIdentifier());
+    Map<String, String> commitCheckPoints = identifiedResultsRepo.collectLatestCommitCheckPoint();
+
     IdentifyContentsPerExecutor executor = new IdentifyContentsPerExecutor(gcParams);
     Dataset<Row> rowDataset =
         session

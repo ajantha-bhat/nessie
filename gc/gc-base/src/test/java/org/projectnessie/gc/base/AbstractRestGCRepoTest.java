@@ -85,6 +85,7 @@ public abstract class AbstractRestGCRepoTest extends AbstractRestGCTest {
           RowFactory.create(
               startAt,
               runId,
+              "content-output",
               contentId,
               content.getType().name(),
               content.getSnapshotId(),

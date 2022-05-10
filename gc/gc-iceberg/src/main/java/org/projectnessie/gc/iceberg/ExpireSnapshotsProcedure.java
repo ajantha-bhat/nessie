@@ -29,6 +29,7 @@ import java.util.stream.Collectors;
 import org.apache.commons.lang.reflect.FieldUtils;
 import org.apache.iceberg.BaseMetastoreTableOperations;
 import org.apache.iceberg.BaseTable;
+import org.apache.iceberg.GcMetadataUtil;
 import org.apache.iceberg.HasTableOperations;
 import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.Table;
@@ -54,7 +55,6 @@ import org.projectnessie.api.params.FetchOption;
 import org.projectnessie.client.api.NessieApiV1;
 import org.projectnessie.error.NessieConflictException;
 import org.projectnessie.error.NessieNotFoundException;
-import org.projectnessie.gc.base.GCCheckPointRepo;
 import org.projectnessie.gc.base.GCUtil;
 import org.projectnessie.gc.base.IdentifiedResultsRepo;
 import org.projectnessie.model.Branch;
@@ -81,7 +81,6 @@ public class ExpireSnapshotsProcedure extends BaseGcProcedure {
         ProcedureParameter.required("nessie_catalog_name", DataTypes.StringType),
         ProcedureParameter.required("output_branch_name", DataTypes.StringType),
         ProcedureParameter.required("output_table_identifier", DataTypes.StringType),
-        ProcedureParameter.required("checkpoint_table_identifier", DataTypes.StringType),
         ProcedureParameter.required(
             "nessie_client_configurations",
             DataTypes.createMapType(DataTypes.StringType, DataTypes.StringType)),
@@ -145,15 +144,14 @@ public class ExpireSnapshotsProcedure extends BaseGcProcedure {
     String gcCatalogName = internalRow.getString(1);
     String gcOutputBranchName = internalRow.getString(2);
     String gcOutputTableIdentifier = internalRow.getString(3);
-    String gcCheckPointTableIdentifier = internalRow.getString(4);
     Map<String, String> nessieClientConfig = new HashMap<>();
-    MapData map = internalRow.getMap(5);
+    MapData map = internalRow.getMap(4);
     for (int i = 0; i < map.numElements(); i++) {
       nessieClientConfig.put(
           map.keyArray().getUTF8String(i).toString(), map.valueArray().getUTF8String(i).toString());
     }
-    String runId = !internalRow.isNullAt(6) ? internalRow.getString(6) : null;
-    boolean dryRun = !internalRow.isNullAt(7) && internalRow.getBoolean(7);
+    String runId = !internalRow.isNullAt(5) ? internalRow.getString(5) : null;
+    boolean dryRun = !internalRow.isNullAt(6) && internalRow.getBoolean(6);
 
     IdentifiedResultsRepo identifiedResultsRepo =
         new IdentifiedResultsRepo(
@@ -177,6 +175,7 @@ public class ExpireSnapshotsProcedure extends BaseGcProcedure {
           .entrySet()
           .forEach(
               entry -> {
+                // TODO: update this
                 // Expiry Algorithm:
                 // A. For each content id, fetch ANY one of the content.
                 // B. Use the newly created expiry branch. On this branch,
@@ -225,16 +224,12 @@ public class ExpireSnapshotsProcedure extends BaseGcProcedure {
                 // create a dummy table metadata which has all the snapshots for a content from all
                 // the references.
                 TableMetadata base = ((BaseTable) table).operations().current();
-                base = TableMetadata.buildFrom(base).build();
-                try {
-                  FieldUtils.writeField(base, "previousFiles", Collections.emptyList(), true);
-                  FieldUtils.writeField(base, "snapshotLog", Collections.emptyList(), true);
-                } catch (IllegalAccessException e) {
-                  throw new RuntimeException(e);
-                }
-                List<Snapshot> baseSnapshots = base.snapshots();
+                TableMetadata metadataWithoutHistory =
+                    GcMetadataUtil.getMetadataWithoutHistory(base);
                 TableMetadata.Builder builder =
-                    TableMetadata.buildFrom(base).removeSnapshots(baseSnapshots);
+                    TableMetadata.buildFrom(metadataWithoutHistory)
+                        .removeSnapshots(metadataWithoutHistory.snapshots());
+                // add all the snapshots for this content id collected from all the references.
                 snapshotSet.forEach(builder::addSnapshot);
                 ((BaseTable) table).operations().commit(base, builder.build());
 
@@ -256,11 +251,8 @@ public class ExpireSnapshotsProcedure extends BaseGcProcedure {
 
       dropExpireProcedureBranch(expiryBranchName, api);
 
-      GCCheckPointRepo gcCheckPointRepo =
-          new GCCheckPointRepo(
-              spark(), gcCatalogName, gcOutputBranchName, gcCheckPointTableIdentifier);
-      Row markerRow = gcCheckPointRepo.createMarkerRow(runId);
-      gcCheckPointRepo.writeToOutputTable(Collections.singletonList(markerRow));
+      Row markerRow = identifiedResultsRepo.createCheckPointMarkerRow(runId);
+      identifiedResultsRepo.writeToOutputTable(Collections.singletonList(markerRow));
     }
     return outputRows.toArray(new InternalRow[0]);
   }
@@ -319,6 +311,7 @@ public class ExpireSnapshotsProcedure extends BaseGcProcedure {
   }
 
   private static void updateMetadataLocation(BaseTable table) {
+    // TODO: Remove this method after https://github.com/apache/iceberg/pull/4509
     try {
       BaseMetastoreTableOperations operations = (BaseMetastoreTableOperations) table.operations();
       FieldUtils.writeField(

@@ -72,18 +72,10 @@ public interface GCParams extends Serializable {
   String getOutputBranchName();
 
   /**
-   * Output table identifier (namespace and table name) to be used for storing the results in {@link
-   * #getOutputBranchName()}.
+   * Output table identifier (namespace and table name) to be used for storing the results and
+   * checkpoints in {@link #getOutputBranchName()}.
    */
   String getOutputTableIdentifier();
-
-  /**
-   * GC checkpoint table identifier (namespace and table name) to be used for storing the last
-   * traversed commit hash per reference during identify step for a run id.
-   *
-   * <p>Used for identifying the expired contents to avoid traversing all the commits.
-   */
-  String getGcCheckPointTableIdentifier();
 
   @Value.Check
   default void validate() {

@@ -51,7 +51,6 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
   static final String GC_BRANCH_NAME = "gcRef";
   static final String GC_EXPIRE_BRANCH_NAME = "someExpireRef";
   static final String GC_OUTPUT_TABLE_NAME = "gc_results";
-  static final String GC_CHECK_POINT_TABLE_NAME = "gc_checkpoint";
   static final String GC_SPARK_CATALOG = "org.projectnessie.gc.iceberg.NessieIcebergGcSparkCatalog";
 
   static final String TABLE_ONE = "table_1";
@@ -251,7 +250,14 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
 
       // clear the checkpoint point
       useReference(sparkSession, CATALOG_NAME, GC_BRANCH_NAME);
-      dropTable(sparkSession, CATALOG_NAME, prefix, GC_CHECK_POINT_TABLE_NAME);
+      ProcedureTestUtil.sql(
+          sparkSession,
+          "DELETE FROM %s WHERE %s = '%s' OR %s = '%s'",
+          CATALOG_NAME + "." + prefix + "." + GC_OUTPUT_TABLE_NAME,
+          "rowType",
+          "checkpoint",
+          "rowType",
+          "checkpoint-marker");
 
       // should collect the expired contents from the beginning of time.
       dataset = performGc(sparkSession, prefix, Instant.now(), Collections.emptyMap(), null);
@@ -323,7 +329,6 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
                     + "nessie_catalog_name => '%s', "
                     + "output_branch_name => '%s', "
                     + "output_table_identifier => '%s', "
-                    + "checkpoint_table_identifier => '%s', "
                     + "nessie_client_configurations => map('%s','%s'), "
                     + "dry_run => %s)",
                 CATALOG_NAME,
@@ -334,7 +339,6 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
                 CATALOG_NAME,
                 GC_BRANCH_NAME,
                 prefix + "." + GC_OUTPUT_TABLE_NAME,
-                prefix + "." + GC_CHECK_POINT_TABLE_NAME,
                 CONF_NESSIE_URI,
                 getUri().toString(),
                 dryRun));
@@ -355,7 +359,6 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
             CATALOG_NAME,
             GC_BRANCH_NAME,
             prefix + "." + GC_OUTPUT_TABLE_NAME,
-            prefix + "." + GC_CHECK_POINT_TABLE_NAME,
             getUri().toString(),
             cutoffTimeStamp,
             deadReferenceCutoffTime,
@@ -381,7 +384,6 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
             CATALOG_NAME,
             GC_BRANCH_NAME,
             prefix + "." + GC_OUTPUT_TABLE_NAME,
-            prefix + "." + GC_CHECK_POINT_TABLE_NAME,
             getUri().toString(),
             cutoffTimeStamp,
             deadReferenceCutoffTime,

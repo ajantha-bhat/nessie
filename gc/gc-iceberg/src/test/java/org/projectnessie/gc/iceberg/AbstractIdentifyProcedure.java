@@ -41,7 +41,6 @@ public abstract class AbstractIdentifyProcedure extends AbstractRestGCTest {
   static final String CATALOG_NAME = "nessie";
   static final String GC_BRANCH_NAME = "gcBranch";
   static final String GC_TABLE_NAME = "gc_results";
-  static final String GC_CHECK_POINT_TABLE_NAME = "gc_checkpoint";
   static final String GC_SPARK_CATALOG = "org.projectnessie.gc.iceberg.NessieIcebergGcSparkCatalog";
 
   @Override
@@ -64,7 +63,6 @@ public abstract class AbstractIdentifyProcedure extends AbstractRestGCTest {
               CATALOG_NAME,
               GC_BRANCH_NAME,
               prefix + "." + GC_TABLE_NAME,
-              prefix + "." + GC_CHECK_POINT_TABLE_NAME,
               getUri().toString(),
               cutoffTimeStamp,
               deadReferenceCutoffTime,
@@ -121,7 +119,6 @@ public abstract class AbstractIdentifyProcedure extends AbstractRestGCTest {
                                   + "nessie_catalog_name => '%s', "
                                   + "output_branch_name => '%s', "
                                   + "output_table_identifier => '%s', "
-                                  + "checkpoint_table_identifier => '%s', "
                                   + "nessie_client_configurations => map('%s','%s'), "
                                   + "bloom_filter_expected_entries => %d)",
                               CATALOG_NAME,
@@ -130,7 +127,6 @@ public abstract class AbstractIdentifyProcedure extends AbstractRestGCTest {
                               CATALOG_NAME,
                               GC_BRANCH_NAME,
                               GC_TABLE_NAME,
-                              GC_CHECK_POINT_TABLE_NAME,
                               CONF_NESSIE_URI,
                               getUri().toString(),
                               5))

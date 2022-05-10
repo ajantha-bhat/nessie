@@ -81,6 +81,7 @@ public abstract class AbstractRestGC extends AbstractRest {
                     RowFactory.create(
                         Timestamp.from(Instant.now()),
                         "dummyRunId",
+                        "content-output",
                         content.getId(),
                         null,
                         content.getSnapshotId(),
@@ -115,7 +116,6 @@ public abstract class AbstractRestGC extends AbstractRest {
               .defaultCutOffTimestamp(cutoffTimeStamp)
               .nessieCatalogName("nessie")
               .outputBranchName("gcBranch")
-              .gcCheckPointTableIdentifier(prefix + ".gc_checkpoint")
               .outputTableIdentifier(prefix + ".gc_results")
               .build();
       GCImpl gc = new GCImpl(gcParams);
