@@ -43,10 +43,10 @@ final class GcProcedureUtil {
   static BaseGcProcedure loadGcProcedure(Identifier procedureIdentifier, TableCatalog catalog)
       throws NoSuchProcedureException {
     switch (procedureIdentifier.name()) {
-      case IdentifyExpiredSnapshotsProcedure.PROCEDURE_NAME:
-        return new IdentifyExpiredSnapshotsProcedure(catalog);
-      case ExpireSnapshotsProcedure.PROCEDURE_NAME:
-        return new ExpireSnapshotsProcedure(catalog);
+      case IdentifyExpiredContentsProcedure.PROCEDURE_NAME:
+        return new IdentifyExpiredContentsProcedure(catalog);
+      case ExpireContentsProcedure.PROCEDURE_NAME:
+        return new ExpireContentsProcedure(catalog);
       default:
         throw new NoSuchProcedureException(procedureIdentifier);
     }

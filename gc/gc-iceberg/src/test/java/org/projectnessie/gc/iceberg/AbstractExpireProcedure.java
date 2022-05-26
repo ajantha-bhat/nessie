@@ -15,6 +15,7 @@
  */
 package org.projectnessie.gc.iceberg;
 
+import static org.apache.iceberg.types.Types.NestedField.required;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.projectnessie.client.NessieConfigConstants.CONF_NESSIE_URI;
 import static org.projectnessie.gc.iceberg.GcProcedureUtil.NAMESPACE;
@@ -33,15 +34,21 @@ import java.util.Map;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.iceberg.Schema;
+import org.apache.iceberg.spark.SparkSchemaUtil;
+import org.apache.iceberg.types.Types;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
+import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SparkSession;
-import org.apache.spark.sql.functions;
+import org.apache.spark.sql.types.StructType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.projectnessie.error.NessieNotFoundException;
 import org.projectnessie.gc.base.AbstractRestGC;
 import org.projectnessie.gc.base.IdentifiedResultsRepo;
 import org.projectnessie.model.Branch;
+import org.projectnessie.model.ContentKey;
 
 public abstract class AbstractExpireProcedure extends AbstractRestGC {
 
@@ -49,13 +56,22 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
 
   static final String CATALOG_NAME = "nessie";
   static final String GC_BRANCH_NAME = "gcRef";
-  static final String GC_EXPIRE_BRANCH_NAME = "someExpireRef";
   static final String GC_OUTPUT_TABLE_NAME = "gc_results";
   static final String GC_SPARK_CATALOG = "org.projectnessie.gc.iceberg.NessieIcebergGcSparkCatalog";
 
   static final String TABLE_ONE = "table_1";
   static final String TABLE_TWO = "table_2";
   static final String TABLE_THREE = "table_3";
+
+  private static final Schema icebergSchema =
+      new Schema(
+          Types.StructType.of(
+                  required(1, "content_id", Types.StringType.get()),
+                  required(2, "type", Types.StringType.get()),
+                  required(3, "deleted_files_count", Types.IntegerType.get()))
+              .fields());
+
+  private static final StructType schema = SparkSchemaUtil.convert(icebergSchema);
 
   @Override
   protected SparkSession getSparkSession() {
@@ -83,15 +99,36 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
       List<Row> expectedExpired = new ArrayList<>();
       fillExpectedContents(Branch.of(branch1, null), 2, expectedExpired);
 
+      String cid1 = getContentId(prefix, branch1, TABLE_ONE);
       ProcedureTestUtil.dropBranch(sparkSession, CATALOG_NAME, branch1);
 
       Instant cutoffTime = Instant.now();
 
-      Dataset<Row> dataset =
-          performGcAndVerify(
-              sparkSession, prefix, cutoffTime, Collections.emptyMap(), expectedExpired, null);
+      performGcAndVerify(
+          sparkSession, prefix, cutoffTime, Collections.emptyMap(), expectedExpired, null);
 
-      performExpiry(prefix, sparkSession, perContentId(dataset), true);
+      List<Row> expectedExpiredFiles = new ArrayList<>();
+      expectedExpiredFiles.add(createRow(cid1, "ICEBERG_MANIFESTLIST", 2));
+      expectedExpiredFiles.add(createRow(cid1, "ICEBERG_MANIFEST", 2));
+      expectedExpiredFiles.add(createRow(cid1, "DATA_FILE", 2));
+      Dataset<Row> expiredDataset = createDataset(sparkSession, expectedExpiredFiles);
+
+      performExpiry(prefix, sparkSession, expiredDataset, true);
+      performExpiry(prefix, sparkSession, expiredDataset, false);
+    }
+  }
+
+  private String getContentId(String prefix, String branch1, String tableName) {
+    try {
+      return getApi()
+          .getContent()
+          .key(ContentKey.of(prefix, tableName))
+          .refName(branch1)
+          .get()
+          .get(ContentKey.of(prefix, tableName))
+          .getId();
+    } catch (NessieNotFoundException e) {
+      throw new RuntimeException(e);
     }
   }
 
@@ -139,6 +176,7 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
       dropTable(sparkSession, CATALOG_NAME, prefix, TABLE_ONE);
 
       useReference(sparkSession, CATALOG_NAME, branch3);
+      String cid3 = getContentId(prefix, branch3, TABLE_THREE);
       dropTable(sparkSession, CATALOG_NAME, prefix, TABLE_TWO);
       dropTable(sparkSession, CATALOG_NAME, prefix, TABLE_THREE);
 
@@ -150,11 +188,15 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
       useReference(sparkSession, CATALOG_NAME, branch3);
       commit(sparkSession, CATALOG_NAME, prefix, TABLE_ONE);
 
-      Dataset<Row> dataset =
-          performGcAndVerify(
-              sparkSession, prefix, cutoffTime, Collections.emptyMap(), expectedExpired, null);
+      performGcAndVerify(
+          sparkSession, prefix, cutoffTime, Collections.emptyMap(), expectedExpired, null);
 
-      performExpiry(prefix, sparkSession, perContentId(dataset), false);
+      List<Row> expectedExpiredFiles = new ArrayList<>();
+      expectedExpiredFiles.add(createRow(cid3, "ICEBERG_MANIFESTLIST", 1));
+      expectedExpiredFiles.add(createRow(cid3, "ICEBERG_MANIFEST", 1));
+      expectedExpiredFiles.add(createRow(cid3, "DATA_FILE", 1));
+
+      performExpiry(prefix, sparkSession, createDataset(sparkSession, expectedExpiredFiles), false);
     }
   }
 
@@ -202,11 +244,14 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
 
       Instant cutoffTime = Instant.now();
 
-      Dataset<Row> dataset =
-          performGcAndVerify(
-              sparkSession, prefix, cutoffTime, Collections.emptyMap(), expectedExpired, null);
+      performGcAndVerify(
+          sparkSession, prefix, cutoffTime, Collections.emptyMap(), expectedExpired, null);
 
-      performExpiry(prefix, sparkSession, perContentId(dataset), false);
+      List<Row> expectedExpiredFiles = new ArrayList<>();
+      String cid1 = getContentId(prefix, branch1, TABLE_TWO);
+      expectedExpiredFiles.add(createRow(cid1, "ICEBERG_MANIFESTLIST", 2));
+
+      performExpiry(prefix, sparkSession, createDataset(sparkSession, expectedExpiredFiles), false);
     }
   }
 
@@ -234,19 +279,18 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
 
       Instant cutoffTime = Instant.now();
 
-      Dataset<Row> dataset =
-          performGcAndVerify(
-              sparkSession, prefix, cutoffTime, Collections.emptyMap(), expectedExpired, null);
+      performGcAndVerify(
+          sparkSession, prefix, cutoffTime, Collections.emptyMap(), expectedExpired, null);
 
-      performExpiry(prefix, sparkSession, perContentId(dataset), false);
-      Dataset<Row> dataset1 =
-          performGcAndVerify(
-              sparkSession,
-              prefix,
-              cutoffTime,
-              Collections.emptyMap(),
-              Collections.emptyList(),
-              null);
+      List<Row> expectedExpiredFiles = new ArrayList<>();
+      String cid1 = getContentId(prefix, branch1, TABLE_ONE);
+      expectedExpiredFiles.add(createRow(cid1, "ICEBERG_MANIFESTLIST", 2));
+
+      performExpiry(prefix, sparkSession, createDataset(sparkSession, expectedExpiredFiles), false);
+
+      // identify the expired contents after checkpoint. It should return empty results
+      performGcAndVerify(
+          sparkSession, prefix, cutoffTime, Collections.emptyMap(), Collections.emptyList(), null);
 
       // clear the checkpoint point
       useReference(sparkSession, CATALOG_NAME, GC_BRANCH_NAME);
@@ -260,15 +304,14 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
           "checkpoint-marker");
 
       // should collect the expired contents from the beginning of time.
-      dataset = performGc(sparkSession, prefix, Instant.now(), Collections.emptyMap(), null);
+      Dataset<Row> dataset =
+          performGc(sparkSession, prefix, Instant.now(), Collections.emptyMap(), null);
       // identify branch and expire branch will have some expired contents.
       // Expire branch's commit hash is not visible outside as the reference is dropped after
       // expiry.
       // Hence, only validate original references.
       dataset = dataset.filter(dataset.col("referenceName").equalTo("checkpoint_1"));
       verify(dataset, expectedExpired, sparkSession, IdentifiedResultsRepo.getSchema());
-      // TODO: try to run the expiry, output should be empty.
-      // performExpiry(prefix, sparkSession, sparkSession.emptyDataFrame(), false);
     }
   }
 
@@ -310,12 +353,14 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
 
       Instant cutoffTime = Instant.now();
 
-      Dataset<Row> dataset =
-          performGcAndVerify(
-              sparkSession, prefix, cutoffTime, Collections.emptyMap(), expectedExpired, null);
-      dataset.show(false);
-      // TODO: need to fix the expiry algorithm for without global state.
-      performExpiry(prefix, sparkSession, perContentId(dataset), false);
+      performGcAndVerify(
+          sparkSession, prefix, cutoffTime, Collections.emptyMap(), expectedExpired, null);
+
+      List<Row> expectedExpiredFiles = new ArrayList<>();
+      String cid1 = getContentId(prefix, branch1, TABLE_ONE);
+      expectedExpiredFiles.add(createRow(cid1, "ICEBERG_MANIFESTLIST", 5));
+
+      performExpiry(prefix, sparkSession, createDataset(sparkSession, expectedExpiredFiles), false);
     }
   }
 
@@ -325,7 +370,6 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
         sparkSession.sql(
             String.format(
                 "CALL %s.%s.%s("
-                    + "expire_procedure_branch_name => '%s', "
                     + "nessie_catalog_name => '%s', "
                     + "output_branch_name => '%s', "
                     + "output_table_identifier => '%s', "
@@ -333,20 +377,18 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
                     + "dry_run => %s)",
                 CATALOG_NAME,
                 NAMESPACE,
-                ExpireSnapshotsProcedure.PROCEDURE_NAME,
+                ExpireContentsProcedure.PROCEDURE_NAME,
                 //
-                GC_EXPIRE_BRANCH_NAME,
                 CATALOG_NAME,
                 GC_BRANCH_NAME,
                 prefix + "." + GC_OUTPUT_TABLE_NAME,
                 CONF_NESSIE_URI,
                 getUri().toString(),
                 dryRun));
-    output.show(200, false);
     verifyExpiry(output, rows, dryRun);
   }
 
-  private Dataset<Row> performGcAndVerify(
+  private void performGcAndVerify(
       SparkSession session,
       String prefix,
       Instant cutoffTimeStamp,
@@ -369,7 +411,6 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
     Dataset<Row> actualRowDataset =
         actualIdentifiedResultsRepo.collectExpiredContentsAsDataSet(runId);
     verify(actualRowDataset, expectedDataSet, session, IdentifiedResultsRepo.getSchema());
-    return actualRowDataset;
   }
 
   private Dataset<Row> performGc(
@@ -394,21 +435,11 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
     return actualIdentifiedResultsRepo.collectExpiredContentsAsDataSet(runId);
   }
 
-  private Dataset<Row> perContentId(Dataset<Row> rows) {
-    return rows.groupBy("contentId")
-        .agg(functions.collect_set("snapshotId").as("snapshotIds"))
-        .select("contentId", "snapshotIds")
-        .withColumn("snapshotsCount", functions.size(functions.col("snapshotIds")));
-  }
-
   private void verifyExpiry(Dataset<Row> actual, Dataset<Row> dfExpected, boolean dryRun) {
     Dataset<Row> dfActual =
-        actual.select("content_id", "snapshot_ids", "deleted_manifest_lists_count");
+        actual.select("content_id", "deleted_files_type", "deleted_files_count");
     // when both the dataframe is same, df.except() should return empty.
     assertThat(dfActual.count()).isEqualTo(dfExpected.count());
-    // TODO: remove later
-    dfActual.show(200, false);
-    dfExpected.show(200, false);
     assertThat(dfExpected.except(dfActual).collectAsList()).isEmpty();
 
     try {
@@ -417,18 +448,26 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
       deletedFilesList.stream()
           .map(row -> row.getList(0))
           .forEach(
-              files -> {
-                files.forEach(
-                    file -> {
-                      try {
-                        assertThat(localFs.exists(new Path((String) file))).isEqualTo(dryRun);
-                      } catch (IOException e) {
-                        throw new RuntimeException(e);
-                      }
-                    });
-              });
+              files ->
+                  files.forEach(
+                      file -> {
+                        try {
+                          // verify whether the file exists are not based on dryRun configuration
+                          assertThat(localFs.exists(new Path((String) file))).isEqualTo(dryRun);
+                        } catch (IOException e) {
+                          throw new RuntimeException(e);
+                        }
+                      }));
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  private static Row createRow(String contentID, String type, int count) {
+    return RowFactory.create(contentID, type, count);
+  }
+
+  private static Dataset<Row> createDataset(SparkSession session, List<Row> rows) {
+    return session.createDataFrame(rows, schema);
   }
 }

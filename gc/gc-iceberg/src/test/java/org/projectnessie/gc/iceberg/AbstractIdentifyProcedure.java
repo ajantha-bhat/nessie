@@ -97,7 +97,7 @@ public abstract class AbstractIdentifyProcedure extends AbstractRestGCTest {
                               CATALOG_NAME,
                               // Use namespace that doesn't contain the GC stored procedures
                               "other_namespace",
-                              IdentifyExpiredSnapshotsProcedure.PROCEDURE_NAME,
+                              IdentifyExpiredContentsProcedure.PROCEDURE_NAME,
                               Instant.now().getEpochSecond(),
                               CATALOG_NAME,
                               GC_BRANCH_NAME,
@@ -107,7 +107,7 @@ public abstract class AbstractIdentifyProcedure extends AbstractRestGCTest {
                               5))
                       .collectAsList())
           .isInstanceOf(NoSuchProcedureException.class)
-          .hasMessageContaining("Procedure other_namespace.identify_expired_snapshots not found");
+          .hasMessageContaining("Procedure other_namespace.identify_expired_contents not found");
 
       // skip passing the required argument 'default_cut_off_timestamp'
       assertThatThrownBy(
@@ -123,7 +123,7 @@ public abstract class AbstractIdentifyProcedure extends AbstractRestGCTest {
                                   + "bloom_filter_expected_entries => %d)",
                               CATALOG_NAME,
                               NAMESPACE,
-                              IdentifyExpiredSnapshotsProcedure.PROCEDURE_NAME,
+                              IdentifyExpiredContentsProcedure.PROCEDURE_NAME,
                               CATALOG_NAME,
                               GC_BRANCH_NAME,
                               GC_TABLE_NAME,

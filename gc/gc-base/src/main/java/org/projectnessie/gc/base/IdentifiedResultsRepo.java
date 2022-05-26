@@ -62,13 +62,6 @@ public final class IdentifiedResultsRepo {
   private static final String TYPE_CHECKPOINT = "checkpoint";
   private static final String TYPE_CHECKPOINT_MARKER = "checkpoint-marker";
 
-  // private static final String COL_GC_RUN_START = "gcRunStart";
-  // private static final String COL_GC_RUN_ID = "gcRunId";
-  // private static final String COL_ROW_TYPE = "rowType";
-  // private static final String COL_REFERENCE_NAME = "referenceName";
-  // private static final String COL_HASH_ON_REFERENCE = "hashOnReference";
-  // private static final String COL_COMMIT_HASH = "commitHash";
-
   private static final Schema icebergSchema =
       new Schema(
           Types.StructType.of(

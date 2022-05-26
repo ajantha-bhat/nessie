@@ -43,9 +43,9 @@ import org.projectnessie.gc.base.ImmutableGCParams;
  * the run id of the completed GC task which can be used to query the results stored in the Iceberg
  * table via {@link org.projectnessie.gc.base.IdentifiedResultsRepo}.
  */
-public class IdentifyExpiredSnapshotsProcedure extends BaseGcProcedure {
+public class IdentifyExpiredContentsProcedure extends BaseGcProcedure {
 
-  public static final String PROCEDURE_NAME = "identify_expired_snapshots";
+  public static final String PROCEDURE_NAME = "identify_expired_contents";
 
   private static final ProcedureParameter[] PARAMETERS =
       new ProcedureParameter[] {
@@ -80,7 +80,7 @@ public class IdentifyExpiredSnapshotsProcedure extends BaseGcProcedure {
     return GcProcedureUtil.internalRow(runId);
   }
 
-  public IdentifyExpiredSnapshotsProcedure(TableCatalog currentCatalog) {
+  public IdentifyExpiredContentsProcedure(TableCatalog currentCatalog) {
     super(currentCatalog);
   }
 

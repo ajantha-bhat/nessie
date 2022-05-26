@@ -64,7 +64,7 @@ final class ProcedureTestUtil {
       Instant deadReferenceCutoffTime,
       Map<String, Instant> cutOffTimeStampPerRef) {
     // Example Query:
-    // CALL nessie.nessie_gc.identify_expired_snapshots(
+    // CALL nessie.nessie_gc.identify_expired_contents(
     //  default_cut_off_timestamp => TIMESTAMP '2022-05-02 16:39:57.258687',
     //  nessie_catalog_name => 'nessie',
     //  output_branch_name => 'gcRef',
@@ -83,7 +83,7 @@ final class ProcedureTestUtil {
                 + "bloom_filter_expected_entries => %d",
             catalogName,
             NAMESPACE,
-            IdentifyExpiredSnapshotsProcedure.PROCEDURE_NAME,
+            IdentifyExpiredContentsProcedure.PROCEDURE_NAME,
             //
             Timestamp.from(cutoffTimeStamp),
             catalogName,
