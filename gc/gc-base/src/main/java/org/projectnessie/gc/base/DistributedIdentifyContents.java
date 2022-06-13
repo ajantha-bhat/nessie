@@ -18,7 +18,6 @@ package org.projectnessie.gc.base;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.spark.api.java.JavaSparkContext;
@@ -54,9 +53,9 @@ public class DistributedIdentifyContents {
    * @param droppedRefTimeMap map of dropped time for reference@hash (JSON serialized)
    * @param runId current run id of the gc
    * @param startedAt gc start time
-   * @return map of {@link ContentBloomFilter} per content-id.
+   * @return {@link ContentBloomFilter} object.
    */
-  public Map<String, ContentBloomFilter> getLiveContentsBloomFilters(
+  public ContentBloomFilter getLiveContentsBloomFilters(
       List<String> references,
       long bloomFilterSize,
       Map<String, Instant> droppedRefTimeMap,
@@ -68,11 +67,13 @@ public class DistributedIdentifyContents {
             .parallelize(references, getPartitionsCount(gcParams, references))
             .map(executor.computeLiveContentsFunc(bloomFilterSize, droppedRefTimeMap))
             .collect();
-    List<Map<String, ContentBloomFilter>> filters = new ArrayList<>();
+    List<ContentBloomFilter> filters = new ArrayList<>();
     List<Row> checkPointRows = new ArrayList<>();
     liveContentsResults.forEach(
         result -> {
-          filters.add(result.getBloomFilterPerContentId());
+          if (result.getBloomFilter() != null) {
+            filters.add(result.getBloomFilter());
+          }
           checkPointRows.add(IdentifiedResultsRepo.createCheckPointRow(runId, startedAt, result));
         });
     IdentifiedResultsRepo identifiedResultsRepo =
@@ -89,7 +90,7 @@ public class DistributedIdentifyContents {
    * Gets the expired contents per content id by walking all the live and dead references in a
    * distributed way using spark and checking the contents against the live bloom filter results.
    *
-   * @param liveContentsBloomFilterMap live contents bloom filter per content id.
+   * @param liveContentsBloomFilter live contents bloom filter.
    * @param references list of all the references (JSON serialized) to walk (live and dead)
    * @param droppedRefTimeMap map of dropped time for reference@hash (JSON serialized)
    * @param runId current run id of the GC
@@ -97,7 +98,7 @@ public class DistributedIdentifyContents {
    * @return current run id of the completed gc task
    */
   public String identifyExpiredContents(
-      Map<String, ContentBloomFilter> liveContentsBloomFilterMap,
+      ContentBloomFilter liveContentsBloomFilter,
       List<String> references,
       Map<String, Instant> droppedRefTimeMap,
       String runId,
@@ -116,7 +117,7 @@ public class DistributedIdentifyContents {
             .createDataset(references, Encoders.STRING())
             .mapPartitions(
                 executor.getExpiredContentRowsFunc(
-                    liveContentsBloomFilterMap,
+                    liveContentsBloomFilter,
                     runId,
                     startedAt,
                     droppedRefTimeMap,
@@ -132,33 +133,19 @@ public class DistributedIdentifyContents {
         : gcParams.getSparkPartitionsCount();
   }
 
-  private static Map<String, ContentBloomFilter> mergeLiveContentResults(
-      List<Map<String, ContentBloomFilter>> bloomFilterMaps, double bloomFilterFpp) {
-    Map<String, ContentBloomFilter> output = new HashMap<>();
-    bloomFilterMaps.forEach(
-        map ->
-            map.forEach(
-                (k, v) -> {
-                  if (output.containsKey(k)) {
-                    output.get(k).merge(v);
-                  } else {
-                    output.put(k, v);
-                  }
-                }));
+  private static ContentBloomFilter mergeLiveContentResults(
+      List<ContentBloomFilter> bloomFilters, double bloomFilterFpp) {
+    if (bloomFilters.isEmpty()) {
+      return null;
+    }
+    ContentBloomFilter output = bloomFilters.get(0);
+    bloomFilters.subList(1, bloomFilters.size()).forEach(output::merge);
+
     // Since we merged bloom filters log in case their quality deteriorated
-    output.entrySet().stream()
-        .filter(e -> e.getValue().wasMerged())
-        .forEach(
-            e -> {
-              double fpp = e.getValue().getExpectedFpp();
-              if (fpp > bloomFilterFpp) {
-                String contentId = e.getKey();
-                LOGGER.info(
-                    "Fpp of ContentBloomFilter for '{}': {}",
-                    contentId,
-                    String.format("%.3f", fpp));
-              }
-            });
+    if (output.getExpectedFpp() > bloomFilterFpp) {
+      LOGGER.info(
+          "Fpp of merged ContentBloomFilter is {}", String.format("%.3f", output.getExpectedFpp()));
+    }
     return output;
   }
 }

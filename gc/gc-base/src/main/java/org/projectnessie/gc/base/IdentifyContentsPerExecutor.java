@@ -18,8 +18,6 @@ package org.projectnessie.gc.base;
 import java.io.Serializable;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
@@ -77,7 +75,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
 
   protected SerializableFunction1<scala.collection.Iterator<String>, scala.collection.Iterator<Row>>
       getExpiredContentRowsFunc(
-          Map<String, ContentBloomFilter> liveContentsBloomFilterMap,
+          ContentBloomFilter liveContentsBloomFilter,
           String runId,
           Timestamp startedAt,
           Map<String, Instant> droppedRefTimeMap,
@@ -85,7 +83,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
     return result ->
         getExpiredContentRows(
             result,
-            liveContentsBloomFilterMap,
+            liveContentsBloomFilter,
             runId,
             startedAt,
             droppedRefTimeMap,
@@ -113,7 +111,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
           .lastLiveCommitHash(ref.getHash())
           .referenceName(ref.getName())
           .hashOnReference(ref.getHash())
-          .bloomFilterPerContentId(Collections.emptyMap())
+          .bloomFilter(null)
           .build();
     }
     Predicate<CommitMeta> liveCommitPredicate =
@@ -143,7 +141,9 @@ public class IdentifyContentsPerExecutor implements Serializable {
                     .refName(Detached.REF_NAME)
                     .fetch(FetchOption.ALL),
             OptionalInt.empty())) {
-      Map<String, ContentBloomFilter> bloomFilterMap = new HashMap<>();
+      ContentBloomFilter bloomFilter =
+          new ContentBloomFilter(
+              gcStateParamsPerTask.getBloomFilterSize(), gcParams.getBloomFilterFpp());
       Set<ContentKey> liveContentKeys = new HashSet<>();
       MutableBoolean foundAllLiveCommitHeadsBeforeCutoffTime = new MutableBoolean(false);
       // commit handler for the spliterator
@@ -152,7 +152,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
               handleLiveCommit(
                   gcStateParamsPerTask,
                   logEntry,
-                  bloomFilterMap,
+                  bloomFilter,
                   foundAllLiveCommitHeadsBeforeCutoffTime,
                   liveContentKeys);
       // traverse commits using the spliterator
@@ -167,7 +167,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
           .lastLiveCommitHash(lastVisitedHash)
           .referenceName(gcStateParamsPerTask.getReference().getName())
           .hashOnReference(gcStateParamsPerTask.getReference().getHash())
-          .bloomFilterPerContentId(bloomFilterMap)
+          .bloomFilter(bloomFilter)
           .build();
     } catch (NessieNotFoundException e) {
       throw new RuntimeException(e);
@@ -177,7 +177,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
   private void handleLiveCommit(
       GCStateParamsPerTask gcStateParamsPerTask,
       LogResponse.LogEntry logEntry,
-      Map<String, ContentBloomFilter> bloomFilterMap,
+      ContentBloomFilter bloomFilter,
       MutableBoolean foundAllLiveCommitHeadsBeforeCutoffTime,
       Set<ContentKey> liveContentKeys) {
     if (logEntry.getOperations() != null) {
@@ -223,14 +223,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
                 }
                 if (addContent) {
                   Content content = ((Operation.Put) operation).getContent();
-                  bloomFilterMap
-                      .computeIfAbsent(
-                          content.getId(),
-                          k ->
-                              new ContentBloomFilter(
-                                  gcStateParamsPerTask.getBloomFilterSize(),
-                                  gcParams.getBloomFilterFpp()))
-                      .put(content);
+                  bloomFilter.put(content);
                 }
               });
     }
@@ -259,7 +252,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
    */
   private scala.collection.Iterator<Row> getExpiredContentRows(
       scala.collection.Iterator<String> references,
-      Map<String, ContentBloomFilter> liveContentsBloomFilterMap,
+      ContentBloomFilter liveContentsBloomFilter,
       String runId,
       Timestamp startedAt,
       Map<String, Instant> droppedRefTimeMap,
@@ -278,7 +271,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
                   walkAllCommitsInReference(
                       api,
                       ref,
-                      liveContentsBloomFilterMap,
+                      liveContentsBloomFilter,
                       runId,
                       startedAt,
                       getCutoffTimeForRef(reference, droppedRefTimeMap),
@@ -290,7 +283,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
   private Iterator<Row> walkAllCommitsInReference(
       NessieApiV1 api,
       Reference reference,
-      Map<String, ContentBloomFilter> liveContentsBloomFilterMap,
+      ContentBloomFilter liveContentsBloomFilter,
       String runId,
       Timestamp startedAt,
       Instant cutoffTime,
@@ -312,8 +305,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
     // But live contents never be considered as expired.
     Predicate<Content> expiredContentPredicate =
         content ->
-            (liveContentsBloomFilterMap.get(content.getId()) == null
-                || !liveContentsBloomFilterMap.get(content.getId()).mightContain(content));
+            (liveContentsBloomFilter == null || !liveContentsBloomFilter.mightContain(content));
     Predicate<Content> validSnapshotPredicate =
         content ->
             (content instanceof IcebergTable && ((IcebergTable) content).getSnapshotId() != -1)

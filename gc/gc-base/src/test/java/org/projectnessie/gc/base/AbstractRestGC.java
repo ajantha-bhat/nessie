@@ -178,7 +178,12 @@ public abstract class AbstractRestGC extends AbstractRest {
       throws NessieNotFoundException, NessieConflictException {
     IcebergTable meta =
         IcebergTable.of(
-            prefix + "_" + metadataFile, snapshotId, 42, 42, 42, prefix + "_" + contentId);
+            prefix + "_" + contentId + "_" + metadataFile,
+            snapshotId,
+            42,
+            42,
+            42,
+            prefix + "_" + contentId);
     CommitMultipleOperationsBuilder multiOp =
         getApi()
             .commitMultipleOperations()

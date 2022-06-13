@@ -72,11 +72,18 @@ public class ContentBloomFilter implements Serializable {
   }
 
   private String getValue(Content content) {
+    // For the contents before global state removal (Nessie version < 0.26.0)
+    // snapshotId will be unique for a content.
+    // Once global state is removed, snapshotId may not be unique,
+    // but metadataLocation will be unique for a content.
+    // Hence, to handle both the versions, use snapshotId + metadataLocation as key.
     switch (content.getType()) {
       case ICEBERG_TABLE:
-        return ICEBERG_TABLE.name() + ((IcebergTable) content).getSnapshotId();
+        IcebergTable icebergTable = (IcebergTable) content;
+        return icebergTable.getSnapshotId() + icebergTable.getMetadataLocation();
       case ICEBERG_VIEW:
-        return ICEBERG_VIEW.name() + ((IcebergView) content).getVersionId();
+        IcebergView icebergView = (IcebergView) content;
+        return icebergView.getVersionId() + icebergView.getMetadataLocation();
       default:
         throw new RuntimeException("Unsupported type " + content.getType());
     }

@@ -99,7 +99,7 @@ public class GCImpl {
   public String identifyExpiredContents(SparkSession session) {
     DistributedIdentifyContents distributedIdentifyContents;
     List<String> allRefs;
-    Map<String, ContentBloomFilter> liveContentsBloomFilterMap;
+    ContentBloomFilter liveContentsBloomFilter;
     Map<String, Instant> droppedReferenceTimeMap;
     String runId = UUID.randomUUID().toString();
     Timestamp startedAt = Timestamp.from(Instant.now());
@@ -120,14 +120,14 @@ public class GCImpl {
               ? getTotalCommitsInDefaultReference(api)
               : gcParams.getBloomFilterExpectedEntries();
       GCUtil.getOrCreateEmptyBranch(api, gcParams.getOutputBranchName());
-      // Identify the live contents and return the bloom filter per content-id
-      liveContentsBloomFilterMap =
+      // Identify the live contents and return the bloom filter
+      liveContentsBloomFilter =
           distributedIdentifyContents.getLiveContentsBloomFilters(
               allRefs, bloomFilterSize, droppedReferenceTimeMap, runId, startedAt);
     }
     // Identify the expired contents
     return distributedIdentifyContents.identifyExpiredContents(
-        liveContentsBloomFilterMap, allRefs, droppedReferenceTimeMap, runId, startedAt);
+        liveContentsBloomFilter, allRefs, droppedReferenceTimeMap, runId, startedAt);
   }
 
   private long getTotalCommitsInDefaultReference(NessieApiV1 api) {
