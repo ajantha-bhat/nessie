@@ -147,6 +147,8 @@ nessieProject("nessie-gc", "gc")
 
 nessieProject("nessie-gc-base", "gc/gc-base")
 
+nessieProject("nessie-gc-iceberg", "gc/gc-iceberg")
+
 nessieProject("nessie-model", "model")
 
 nessieProject("nessie-perftest", "perftest")
