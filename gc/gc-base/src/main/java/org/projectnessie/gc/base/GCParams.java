@@ -79,31 +79,9 @@ public interface GCParams extends Serializable {
 
   @Value.Check
   default void validate() {
-    Instant now = Instant.now();
-    if (getDefaultCutOffTimestamp().compareTo(now) > 0) {
-      throw new IllegalArgumentException(
-          "Cutoff time cannot be from the future: " + getDefaultCutOffTimestamp());
-    }
-    Instant deadReferenceCutOffTimeStamp = getDeadReferenceCutOffTimeStamp();
-    if (deadReferenceCutOffTimeStamp != null && deadReferenceCutOffTimeStamp.compareTo(now) > 0) {
-      throw new IllegalArgumentException(
-          "Dead Reference cutoff time cannot be from the future: " + deadReferenceCutOffTimeStamp);
-    }
-    Map<String, Instant> cutOffTimestampPerRef = getCutOffTimestampPerRef();
-    if (cutOffTimestampPerRef != null) {
-      cutOffTimestampPerRef.forEach(
-          (key, value) -> {
-            if (value.compareTo(now) > 0) {
-              throw new IllegalArgumentException(
-                  String.format(
-                      "Reference cutoff time for %s cannot be from the future: " + "%s",
-                      value, deadReferenceCutOffTimeStamp));
-            }
-          });
-    }
-    Integer taskCount = getSparkPartitionsCount();
-    if (taskCount != null && taskCount <= 0) {
-      throw new IllegalArgumentException("taskCount has invalid value: " + taskCount);
+    Integer partitionsCount = getSparkPartitionsCount();
+    if (partitionsCount != null && partitionsCount <= 0) {
+      throw new IllegalArgumentException("partitionsCount has invalid value: " + partitionsCount);
     }
     Long bloomFilterExpectedEntries = getBloomFilterExpectedEntries();
     if (bloomFilterExpectedEntries != null && bloomFilterExpectedEntries < 0) {

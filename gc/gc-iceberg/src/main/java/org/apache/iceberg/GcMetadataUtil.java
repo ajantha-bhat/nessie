@@ -27,8 +27,8 @@ import org.apache.iceberg.io.FileIO;
 import org.projectnessie.gc.iceberg.ExpireContentsProcedure;
 
 /**
- * Custom metadata builder as {@link TableMetadata} has package private constructor and other public
- * constructor will not use new UUID.
+ * Util class with same package as Iceberg because {@link ManifestFiles#open(ManifestFile, FileIO)}
+ * is package private.
  */
 public final class GcMetadataUtil {
 

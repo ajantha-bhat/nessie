@@ -18,6 +18,8 @@ package org.projectnessie.gc.iceberg;
 import static org.projectnessie.client.NessieConfigConstants.CONF_NESSIE_URI;
 import static org.projectnessie.gc.iceberg.GcProcedureUtil.NAMESPACE;
 
+import com.google.errorprone.annotations.FormatMethod;
+import com.google.errorprone.annotations.FormatString;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -169,7 +171,9 @@ final class ProcedureTestUtil {
         sparkSession, "INSERT INTO %s SELECT 42", catalogName + "." + namespace + "." + tableName);
   }
 
-  static Dataset<Row> sql(SparkSession sparkSession, String sqlStatement, Object... args) {
+  @FormatMethod
+  static Dataset<Row> sql(
+      SparkSession sparkSession, @FormatString String sqlStatement, Object... args) {
     String sql = String.format(sqlStatement, args);
     return sparkSession.sql(sql);
   }

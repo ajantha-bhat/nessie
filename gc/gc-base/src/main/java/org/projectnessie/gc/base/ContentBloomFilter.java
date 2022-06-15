@@ -35,7 +35,6 @@ public class ContentBloomFilter implements Serializable {
   // as the consumer of GC results needs only this info for clean up.
   // String bloom filter with content type prefix + snapshot/version id.
   private final BloomFilter<String> filter;
-  private boolean wasMerged = false;
 
   public ContentBloomFilter(long expectedEntries, double bloomFilterFpp) {
     this.filter =
@@ -54,7 +53,6 @@ public class ContentBloomFilter implements Serializable {
   public void merge(ContentBloomFilter filter) {
     if (filter.filter != null) {
       this.filter.putAll(filter.filter);
-      this.wasMerged = true;
     }
   }
 
@@ -62,21 +60,10 @@ public class ContentBloomFilter implements Serializable {
     return filter.expectedFpp();
   }
 
-  /**
-   * A merged bloomfilter might indicate decreased filter quality.
-   *
-   * @return true if other filters were merged into this instance
-   */
-  public boolean wasMerged() {
-    return wasMerged;
-  }
-
   private String getValue(Content content) {
     // For the contents before global state removal (Nessie version < 0.26.0)
-    // snapshotId will be unique for a content.
-    // Once global state is removed, snapshotId may not be unique,
-    // but metadataLocation will be unique for a content.
-    // Hence, to handle both the versions, use snapshotId + metadataLocation as key.
+    // metadataLocation will not be unique.
+    // Hence, to handle both the version's compatibility, use snapshotId + metadataLocation as key.
     switch (content.getType()) {
       case ICEBERG_TABLE:
         IcebergTable icebergTable = (IcebergTable) content;

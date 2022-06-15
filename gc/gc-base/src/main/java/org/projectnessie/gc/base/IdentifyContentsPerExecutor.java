@@ -159,6 +159,10 @@ public class IdentifyContentsPerExecutor implements Serializable {
       String lastVisitedHash =
           GCUtil.traverseLiveCommits(
               foundAllLiveCommitHeadsBeforeCutoffTime, commits, commitHandler);
+      if (lastVisitedHash == null) {
+        // can happen when the branch has no commits.
+        lastVisitedHash = gcStateParamsPerTask.getReference().getHash();
+      }
       LOGGER.debug(
           "For the reference {} last traversed commit {}",
           gcStateParamsPerTask.getReference().getName(),
@@ -222,8 +226,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
                   addContent = !isExpired;
                 }
                 if (addContent) {
-                  Content content = ((Operation.Put) operation).getContent();
-                  bloomFilter.put(content);
+                  bloomFilter.put(((Operation.Put) operation).getContent());
                 }
               });
     }
@@ -308,8 +311,9 @@ public class IdentifyContentsPerExecutor implements Serializable {
             (liveContentsBloomFilter == null || !liveContentsBloomFilter.mightContain(content));
     Predicate<Content> validSnapshotPredicate =
         content ->
-            (content instanceof IcebergTable && ((IcebergTable) content).getSnapshotId() != -1)
-                || (content instanceof IcebergView && ((IcebergView) content).getVersionId() != -1);
+            ((content instanceof IcebergTable && ((IcebergTable) content).getSnapshotId() != -1)
+                || (content instanceof IcebergView
+                    && ((IcebergView) content).getVersionId() != -1));
     try {
       AtomicReference<String> commitHash = new AtomicReference<>();
       AtomicReference<Instant> commitTime = new AtomicReference<>();
@@ -348,7 +352,7 @@ public class IdentifyContentsPerExecutor implements Serializable {
         @Override
         public boolean hasNext() {
           // when the check point is reached, return false so that iterator won't be consumed.
-          return iterator.hasNext() && (!foundCheckPoint.get());
+          return iterator.hasNext() && !foundCheckPoint.get();
         }
 
         @Override

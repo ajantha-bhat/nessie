@@ -74,20 +74,20 @@ public final class GCUtil {
             Math.floorMod(microsSinceEpoch, TimeUnit.SECONDS.toMicros(1))));
   }
 
+  /**
+   * Get the branch if exists based on branch name. If not exists, creates a new branch pointing to
+   * the beginning of time (NO_ANCESTOR hash)
+   */
   public static void getOrCreateEmptyBranch(NessieApiV1 api, String branchName) {
     try {
       api.getReference().refName(branchName).get();
     } catch (NessieNotFoundException e) {
-      createEmptyBranch(api, branchName);
-    }
-  }
-
-  public static void createEmptyBranch(NessieApiV1 api, String branchName) {
-    // create a gc branch pointing to NO_ANCESTOR hash.
-    try {
-      api.createReference().reference(Branch.of(branchName, null)).create();
-    } catch (NessieNotFoundException | NessieConflictException ex) {
-      throw new RuntimeException(ex);
+      // create a gc branch pointing to NO_ANCESTOR hash.
+      try {
+        api.createReference().reference(Branch.of(branchName, null)).create();
+      } catch (NessieNotFoundException | NessieConflictException ex) {
+        throw new RuntimeException(ex);
+      }
     }
   }
 
@@ -143,14 +143,14 @@ public final class GCUtil {
   }
 
   /**
-   * Traverse the live commits stream till an entry is seen for each live content key and reached
-   * expired commits.
+   * Traverse the live commits stream till an entry is seen for each live content key and at least
+   * reached expired commits.
    *
    * @param foundAllLiveCommitHeadsBeforeCutoffTime condition to stop traversing
    * @param commits stream of {@link LogResponse.LogEntry}
    * @param commitHandler consumer of {@link LogResponse.LogEntry}
-   * @return last visited commit hash. It is the commit hash when all the live contents heads are
-   *     found at the cutoff time.
+   * @return last visited commit hash. It is the commit hash when all the live contents heads at the
+   *     cutoff time are found.
    */
   static String traverseLiveCommits(
       MutableBoolean foundAllLiveCommitHeadsBeforeCutoffTime,
@@ -182,6 +182,7 @@ public final class GCUtil {
         return more;
       }
     }.forEachRemaining(commitHandler);
+
     return lastVisitedHash.get();
   }
 

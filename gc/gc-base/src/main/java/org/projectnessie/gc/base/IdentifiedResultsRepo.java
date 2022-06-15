@@ -18,9 +18,11 @@ package org.projectnessie.gc.base;
 import static org.apache.iceberg.types.Types.NestedField.optional;
 import static org.apache.iceberg.types.Types.NestedField.required;
 
+import com.google.common.collect.ImmutableMap;
+import com.google.errorprone.annotations.FormatMethod;
+import com.google.errorprone.annotations.FormatString;
 import java.sql.Timestamp;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -58,9 +60,11 @@ public final class IdentifiedResultsRepo {
   private static final String COL_METADATA_LOCATION = "metadataLocation";
   private static final String COL_IS_EXPIRED = "isExpired";
 
-  private static final String TYPE_CONTENT_OUTPUT = "content-output";
-  private static final String TYPE_CHECKPOINT = "checkpoint";
-  private static final String TYPE_CHECKPOINT_MARKER = "checkpoint-marker";
+  public enum RowType {
+    CONTENT_OUTPUT,
+    CHECKPOINT,
+    CHECKPOINT_MARKER
+  }
 
   private static final Schema icebergSchema =
       new Schema(
@@ -69,7 +73,7 @@ public final class IdentifiedResultsRepo {
                   required(1, COL_GC_RUN_START, Types.TimestampType.withZone()),
                   // GC run-ID.
                   required(2, COL_GC_RUN_ID, Types.StringType.get()),
-                  // row type can be content, checkpoint or checkpoint marker.
+                  // row type can be CONTENT_OUTPUT, CHECKPOINT or CHECKPOINT_MARKER.
                   required(3, COL_ROW_TYPE, Types.StringType.get()),
                   // Nessie Content.id
                   optional(4, COL_CONTENT_ID, Types.StringType.get()),
@@ -81,11 +85,11 @@ public final class IdentifiedResultsRepo {
                   optional(7, COL_REFERENCE_NAME, Types.StringType.get()),
                   // Hash of the reference via which the contentID was collected
                   optional(8, COL_HASH_ON_REFERENCE, Types.StringType.get()),
-                  // commit hash which is containing this content object
+                  // commit hash which is containing this content
                   optional(9, COL_COMMIT_HASH, Types.StringType.get()),
-                  // latest metadata location of this content id on this reference
+                  // metadata location of this content
                   optional(10, COL_METADATA_LOCATION, Types.StringType.get()),
-                  // to indicate whether the present content is expired or live
+                  // to indicate whether this content is expired or live
                   optional(11, COL_IS_EXPIRED, Types.BooleanType.get()))
               .fields());
 
@@ -95,10 +99,11 @@ public final class IdentifiedResultsRepo {
   private final String catalogAndTableWithRefName;
 
   public IdentifiedResultsRepo(
-      SparkSession sparkSession, String catalog, String gcRefName, String gcTableIdentifier) {
+      SparkSession sparkSession, String catalog, String gcBranchName, String gcTableIdentifier) {
     this.sparkSession = sparkSession;
-    this.catalogAndTableWithRefName = withRefName(catalog, gcTableIdentifier, gcRefName);
-    createTableIfAbsent(sparkSession, catalog, TableIdentifier.parse(gcTableIdentifier), gcRefName);
+    this.catalogAndTableWithRefName = withRefName(catalog, gcTableIdentifier, gcBranchName);
+    createTableIfAbsent(
+        sparkSession, catalog, TableIdentifier.parse(gcTableIdentifier), gcBranchName);
   }
 
   public static StructType getSchema() {
@@ -121,7 +126,7 @@ public final class IdentifiedResultsRepo {
         runId,
         //
         COL_ROW_TYPE,
-        TYPE_CONTENT_OUTPUT,
+        RowType.CONTENT_OUTPUT.name(),
         //
         COL_IS_EXPIRED,
         true);
@@ -141,7 +146,7 @@ public final class IdentifiedResultsRepo {
         runId,
         //
         COL_ROW_TYPE,
-        TYPE_CONTENT_OUTPUT);
+        RowType.CONTENT_OUTPUT.name());
   }
 
   public Optional<String> getLatestCompletedRunID() {
@@ -149,7 +154,7 @@ public final class IdentifiedResultsRepo {
     // Example query:
     // SELECT gcRunId FROM nessie.db2.`identified_results@someGcBranch` WHERE gcRunStart =
     //    (SELECT MAX(gcRunStart) FROM nessie.db2.`identified_results@someGcBranch`
-    //    WHERE rowType = "content-output") LIMIT 1
+    //    WHERE rowType = "CONTENT_OUTPUT") LIMIT 1
     List<Row> rows =
         sql(
                 "SELECT %s FROM %s WHERE %s = (SELECT MAX(%s) FROM %s WHERE %s = '%s') LIMIT 1",
@@ -162,35 +167,28 @@ public final class IdentifiedResultsRepo {
                 catalogAndTableWithRefName,
                 //
                 COL_ROW_TYPE,
-                TYPE_CONTENT_OUTPUT)
+                RowType.CONTENT_OUTPUT.name())
             .collectAsList();
     return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0).getString(0));
   }
 
-  public Optional<String> getAnyCommitHashForContentId(String contentId, String runID) {
-    // Example Query:
-    // SELECT commitHash FROM nessie.expire_multiRefMultipleSharedTables.`gc_results@gcRef`
-    //     WHERE gcRunId = 'd60b9bb1-22b9-4b9d-8566-245f89f7d00b'
-    //     AND contentId = '9fd0751d-ede7-4e32-9915-7d56a7a8e5f8'
-    //     AND rowType = "content-output"
-    //     LIMIT 1
-    List<Row> rows =
-        sql(
-                "SELECT %s FROM %s WHERE %s = '%s' AND %s = '%s' AND %s = '%s' LIMIT 1",
-                COL_COMMIT_HASH,
-                //
-                catalogAndTableWithRefName,
-                //
-                COL_GC_RUN_ID,
-                runID,
-                //
-                COL_CONTENT_ID,
-                contentId,
-                //
-                COL_ROW_TYPE,
-                TYPE_CONTENT_OUTPUT)
-            .collectAsList();
-    return Optional.of(rows.get(0).getString(0));
+  public Row createCheckPointMarkerRow(String runId) {
+    return RowFactory.create(
+        getGcStartTime(runId),
+        runId,
+        RowType.CHECKPOINT_MARKER.name(),
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null);
+  }
+
+  public void writeToOutputTable(List<Row> rows) {
+    writeToOutputTable(sparkSession.createDataFrame(rows, schema));
   }
 
   void writeToOutputTable(Dataset<Row> rowDataset) {
@@ -199,7 +197,7 @@ public final class IdentifiedResultsRepo {
       rowDataset.writeTo(catalogAndTableWithRefName).append();
     } catch (NoSuchTableException e) {
       throw new RuntimeException(
-          "Problem while writing gc output rows to the table: " + catalogAndTableWithRefName, e);
+          "Problem while writing output rows to the table: " + catalogAndTableWithRefName, e);
     }
   }
 
@@ -215,7 +213,7 @@ public final class IdentifiedResultsRepo {
     return RowFactory.create(
         startedAt,
         runId,
-        TYPE_CONTENT_OUTPUT,
+        RowType.CONTENT_OUTPUT.name(),
         content.getId(),
         content.getType().name(),
         snapshotId,
@@ -230,28 +228,13 @@ public final class IdentifiedResultsRepo {
     return RowFactory.create(
         startedAt,
         runId,
-        TYPE_CHECKPOINT,
+        RowType.CHECKPOINT.name(),
         null,
         null,
         null,
         result.getReferenceName(),
         result.getHashOnReference(),
         result.getLastLiveCommitHash(),
-        null,
-        null);
-  }
-
-  public Row createCheckPointMarkerRow(String runId) {
-    return RowFactory.create(
-        getGcStartTime(runId),
-        runId,
-        TYPE_CHECKPOINT_MARKER,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
         null,
         null);
   }
@@ -266,7 +249,7 @@ public final class IdentifiedResultsRepo {
             catalogAndTableWithRefName,
             //
             COL_ROW_TYPE,
-            TYPE_CHECKPOINT_MARKER,
+            RowType.CHECKPOINT_MARKER.name(),
             //
             COL_GC_RUN_START);
 
@@ -290,47 +273,20 @@ public final class IdentifiedResultsRepo {
                 runId,
                 //
                 COL_ROW_TYPE,
-                TYPE_CHECKPOINT)
+                RowType.CHECKPOINT.name())
             .collectAsList();
-    Map<String, String> commitCheckPoints = new HashMap<>();
+    ImmutableMap.Builder<String, String> commitCheckPoints = ImmutableMap.builder();
     rows.forEach(row -> commitCheckPoints.put(row.getString(0), row.getString(2)));
-    return commitCheckPoints;
-  }
-
-  public void writeToOutputTable(List<Row> rows) {
-    try {
-      Dataset<Row> rowDataset = sparkSession.createDataFrame(rows, schema);
-      rowDataset.writeTo(catalogAndTableWithRefName).append();
-    } catch (NoSuchTableException e) {
-      throw new RuntimeException(
-          "Problem while writing gc history rows to the table: " + catalogAndTableWithRefName, e);
-    }
-  }
-
-  private Timestamp getGcStartTime(String runId) {
-    return sql(
-            "SELECT %s FROM %s WHERE %s = '%s' AND %s = '%s' LIMIT 1",
-            COL_GC_RUN_START,
-            //
-            catalogAndTableWithRefName,
-            //
-            COL_GC_RUN_ID,
-            runId,
-            //
-            COL_ROW_TYPE,
-            TYPE_CONTENT_OUTPUT)
-        .collectAsList()
-        .get(0)
-        .getTimestamp(0);
+    return commitCheckPoints.build();
   }
 
   static void createTableIfAbsent(
       SparkSession sparkSession,
       String catalogName,
       TableIdentifier tableIdentifier,
-      String gcRefName) {
+      String gcBranchName) {
     try {
-      GCUtil.loadNessieCatalog(sparkSession, catalogName, gcRefName)
+      GCUtil.loadNessieCatalog(sparkSession, catalogName, gcBranchName)
           .createTable(tableIdentifier, IdentifiedResultsRepo.icebergSchema);
     } catch (AlreadyExistsException ex) {
       // Table can exist from previous GC run, no need to throw exception.
@@ -348,7 +304,25 @@ public final class IdentifiedResultsRepo {
         + ImmutableTableReference.builder().name(tableName).reference(refName).build();
   }
 
-  Dataset<Row> sql(String sqlStatement, Object... args) {
+  private Timestamp getGcStartTime(String runId) {
+    return sql(
+            "SELECT %s FROM %s WHERE %s = '%s' AND %s = '%s' LIMIT 1",
+            COL_GC_RUN_START,
+            //
+            catalogAndTableWithRefName,
+            //
+            COL_GC_RUN_ID,
+            runId,
+            //
+            COL_ROW_TYPE,
+            RowType.CONTENT_OUTPUT.name())
+        .collectAsList()
+        .get(0)
+        .getTimestamp(0);
+  }
+
+  @FormatMethod
+  private Dataset<Row> sql(@FormatString String sqlStatement, Object... args) {
     String sql = String.format(sqlStatement, args);
     LOGGER.debug("Executing the sql -> {}", sql);
     return sparkSession.sql(sql);

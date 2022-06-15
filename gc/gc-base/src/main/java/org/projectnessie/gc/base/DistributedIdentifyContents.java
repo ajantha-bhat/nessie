@@ -45,8 +45,7 @@ public class DistributedIdentifyContents {
   }
 
   /**
-   * Compute the bloom filter per content id by walking all the live references in a distributed way
-   * using spark.
+   * Compute the bloom filter by walking all the live references in a distributed way using spark.
    *
    * @param references list of all the references (JSON serialized)
    * @param bloomFilterSize size of bloom filter to be used
@@ -55,7 +54,7 @@ public class DistributedIdentifyContents {
    * @param startedAt gc start time
    * @return {@link ContentBloomFilter} object.
    */
-  public ContentBloomFilter getLiveContentsBloomFilters(
+  public ContentBloomFilter getLiveContentsBloomFilter(
       List<String> references,
       long bloomFilterSize,
       Map<String, Instant> droppedRefTimeMap,

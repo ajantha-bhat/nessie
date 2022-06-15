@@ -58,7 +58,8 @@ public class GCImpl {
   /**
    * Identify the expired contents using a two-step traversal algorithm.
    *
-   * <h2>Algorithm for identifying the live contents and return the bloom filter per content-id</h2>
+   * <h2>Algorithm for identifying the live contents and return the bloom filter of live contents
+   * info</h2>
    *
    * <p>Walk through each reference(both live and dead) distributively (one spark task for each
    * reference).
@@ -77,7 +78,7 @@ public class GCImpl {
    * <p>Stop traversing the expired commits if each live content key has processed one live commit
    * for it. This is an optimization to avoid traversing all the commits.
    *
-   * <p>Collect bloom filter per content id from each task and merge them.
+   * <p>Collect bloom filter per reference from each task and merge them.
    *
    * <h2>Algorithm for identifying the expired contents and return the list of globally expired
    * contents per content id per reference </h2>
@@ -122,7 +123,7 @@ public class GCImpl {
       GCUtil.getOrCreateEmptyBranch(api, gcParams.getOutputBranchName());
       // Identify the live contents and return the bloom filter
       liveContentsBloomFilter =
-          distributedIdentifyContents.getLiveContentsBloomFilters(
+          distributedIdentifyContents.getLiveContentsBloomFilter(
               allRefs, bloomFilterSize, droppedReferenceTimeMap, runId, startedAt);
     }
     // Identify the expired contents

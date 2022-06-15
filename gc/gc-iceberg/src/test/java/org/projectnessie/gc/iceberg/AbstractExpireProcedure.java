@@ -299,9 +299,9 @@ public abstract class AbstractExpireProcedure extends AbstractRestGC {
           "DELETE FROM %s WHERE %s = '%s' OR %s = '%s'",
           CATALOG_NAME + "." + prefix + "." + GC_OUTPUT_TABLE_NAME,
           "rowType",
-          "checkpoint",
+          IdentifiedResultsRepo.RowType.CHECKPOINT.name(),
           "rowType",
-          "checkpoint-marker");
+          IdentifiedResultsRepo.RowType.CHECKPOINT_MARKER.name());
 
       // should collect the expired contents from the beginning of time.
       Dataset<Row> dataset =

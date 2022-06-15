@@ -23,7 +23,7 @@
       <pattern>%date{ISO8601} [%thread] %-5level %logger{36} - %msg%n</pattern>
     </encoder>
   </appender>
-  <logger name="org.apache.spark.sql.delta" level="${test.log.level:-WARN}"/>
+  <logger name="org.projectnessie.gc.iceberg" level="${test.log.level:-WARN}"/>
   <root>
     <level value="${test.log.level:-WARN}"/>
     <appender-ref ref="console"/>

@@ -81,7 +81,7 @@ public abstract class AbstractRestGC extends AbstractRest {
                     RowFactory.create(
                         Timestamp.from(Instant.now()),
                         "dummyRunId",
-                        "content-output",
+                        IdentifiedResultsRepo.RowType.CONTENT_OUTPUT.name(),
                         content.getId(),
                         null,
                         content.getSnapshotId(),

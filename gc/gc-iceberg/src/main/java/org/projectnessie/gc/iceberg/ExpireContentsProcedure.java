@@ -165,7 +165,7 @@ public class ExpireContentsProcedure extends BaseGcProcedure {
   }
 
   private FileIO getFileIO(Map<String, String> nessieClientConfig) {
-    Configuration config = spark().sessionState().newHadoopConf();
+    Configuration config = spark().sparkContext().hadoopConfiguration();
     String fileIOImpl = nessieClientConfig.get(CatalogProperties.FILE_IO_IMPL);
     return fileIOImpl == null
         ? new HadoopFileIO(config)
@@ -174,14 +174,19 @@ public class ExpireContentsProcedure extends BaseGcProcedure {
 
   private static Set<String> getExpiredManifests(
       String runId, IdentifiedResultsRepo identifiedResultsRepo, FileIO io) {
+    // Read all the content-rows from output table for this run id
     Dataset<Row> rowDataset = identifiedResultsRepo.collectAllContentsAsDataSet(runId);
+    // from metadata location of each content, compute the manifests array per content
+    // along with a column that says content is expired or not.
     Dataset<Row> dataset =
         rowDataset.withColumn(
             "manifestLocations", computeManifestsUDF(rowDataset.col("metadataLocation"), io));
+    // explode manifests array per content into one manifest per row.
     dataset =
         dataset
             .withColumn("manifestLocations", functions.explode(dataset.col("manifestLocations")))
             .select("manifestLocations", "isExpired");
+    // compute the globally expired manifests by doing left anti join with locally expired dataset.
     Dataset<Row> expired =
         dataset.filter("isExpired=true").dropDuplicates().select("manifestLocations");
     Dataset<Row> live =
@@ -197,19 +202,45 @@ public class ExpireContentsProcedure extends BaseGcProcedure {
       IdentifiedResultsRepo identifiedResultsRepo,
       Set<String> expiredManifests,
       FileIO fileIO) {
+    // Read expired the content-rows from output table for this run id
     Dataset<Row> rowDataset = identifiedResultsRepo.collectExpiredContentsAsDataSet(runId);
 
+    // Only read the globally expired manifests to collect the expired manifestList, manifests,
+    // datafiles.
+    // Example output row:
+    // row1: content_id_1,
+    //
+    // {manifestLists:a,manifestLists:b,manifestLists:c,manifests:d,manifests:e,datafiles:f,datafiles:g}
+    // row2: content_id_1,
+    //     {manifestLists:a,manifestLists:b,manifests:d,datafiles:f}
     Dataset<Row> dataset =
         rowDataset.withColumn(
             "expiredFilesArray",
             computeExpiredFilesUDF(rowDataset.col("metadataLocation"), expiredManifests, fileIO));
-
+    // explode expired files array and drop duplicates.
+    // Example output row:
+    // content_id_1, manifestLists:a
+    // content_id_1, manifestLists:b
+    // content_id_1, manifestLists:c
+    // content_id_1, manifests:d
+    // content_id_1, manifests:e
+    // content_id_1, datafiles:f
+    // content_id_1, datafiles:g
     dataset =
         dataset
             .withColumn("expiredFilesWithType", functions.explode(dataset.col("expiredFilesArray")))
             .select("contentId", "expiredFilesWithType")
             .dropDuplicates();
 
+    // split the type and value column of the expired files
+    // Example output row:
+    // content_id_1, manifestLists, a
+    // content_id_1, manifestLists, b
+    // content_id_1, manifestLists, c
+    // content_id_1, manifests, d
+    // content_id_1, manifests, e
+    // content_id_1, datafiles, f
+    // content_id_1, datafiles, g
     dataset =
         dataset
             .withColumn(
@@ -219,7 +250,11 @@ public class ExpireContentsProcedure extends BaseGcProcedure {
                 functions.col("contentId"),
                 functions.col("expiredFilesAndType").getItem(0).as("Type"),
                 functions.col("expiredFilesAndType").getItem(1).as("expiredFiles"));
-
+    // final output
+    // Example output row:
+    // content_id_1, manifestLists, {a,b,c}
+    // content_id_1, manifests, {d,e}
+    // content_id_1, datafiles, {f,g}
     return dataset
         .groupBy("contentId", "Type")
         .agg(functions.collect_list("expiredFiles").as("expiredFilesList"))
