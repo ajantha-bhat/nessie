@@ -15,16 +15,17 @@
  */
 package org.apache.iceberg;
 
-import com.esotericsoftware.minlog.Log;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import org.apache.iceberg.exceptions.NotFoundException;
 import org.apache.iceberg.io.FileIO;
 import org.projectnessie.gc.iceberg.ExpireContentsProcedure;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Util class with same package as Iceberg because {@link ManifestFiles#open(ManifestFile, FileIO)}
@@ -32,43 +33,49 @@ import org.projectnessie.gc.iceberg.ExpireContentsProcedure;
  */
 public final class GcMetadataUtil {
 
-  public static List<String> computeDataFiles(
-      TableMetadata metadata, FileIO io, Set<String> expiredManifests) {
-    List<ManifestFile> expiredManifestFiles = new ArrayList<>();
-    metadata
-        .snapshots()
-        .forEach(
-            snapshot -> {
-              try {
-                expiredManifestFiles.addAll(
-                    snapshot.allManifests().stream()
-                        .filter(x -> expiredManifests.contains(x.path()))
-                        .collect(Collectors.toList()));
-              } catch (NotFoundException e) {
-                // As checkpoint is till the last live commit, there can be some expired commits in
-                // between.
-                // So, when expired is called for the second time or later, manifestlists will not
-                // be present for
-                // previously expired contents. Hence, ignore those snapshots.
-                Log.warn(e.getMessage());
-              }
-            });
+  private static final Logger LOG = LoggerFactory.getLogger(GcMetadataUtil.class);
 
-    return expiredManifestFiles.stream()
-        .flatMap(
-            manifest -> {
-              try (ManifestReader<?> reader = ManifestFiles.open(manifest, io)) {
-                return StreamSupport.stream(reader.entries().spliterator(), false)
+  public static void computeManifestsAndDataFiles(
+      Snapshot snapshot, FileIO io, List<String> allFiles) {
+    List<ManifestFile> manifestFiles = new ArrayList<>();
+    try {
+      manifestFiles.addAll(snapshot.allManifests());
+    } catch (NotFoundException e) {
+      // As checkpoint is till the last live commit, there can be some expired commits in
+      // between.
+      // So, when expired is called for the second time or later, manifestlists will not
+      // be present for
+      // previously expired contents. Hence, ignore those snapshots.
+      LOG.warn("Failed to read manifestLists: {}", e.getMessage());
+    }
+
+    List<String> manifests =
+        manifestFiles.stream()
+            .map(
+                manifest ->
+                    ExpireContentsProcedure.FileType.ICEBERG_MANIFEST.name()
+                        + "#"
+                        + manifest.path())
+            .collect(Collectors.toList());
+    allFiles.addAll(manifests);
+
+    List<String> dataFiles = new ArrayList<>();
+    manifestFiles.forEach(
+        manifest -> {
+          try (ManifestReader<?> reader = ManifestFiles.open(manifest, io)) {
+            List<String> files =
+                StreamSupport.stream(reader.entries().spliterator(), false)
                     .map(
                         entry ->
-                            ExpireContentsProcedure.ExpiredContentType.DATA_FILE.name()
+                            ExpireContentsProcedure.FileType.DATA_FILE.name()
                                 + "#"
-                                + entry.file().path().toString());
-              } catch (IOException e) {
-                throw new RuntimeException(
-                    String.format("Failed to read manifest file: %s", manifest.path()), e);
-              }
-            })
-        .collect(Collectors.toList());
+                                + entry.file().path().toString())
+                    .collect(Collectors.toList());
+            dataFiles.addAll(files);
+          } catch (IOException | UncheckedIOException e) {
+            LOG.warn("Failed to read the Manifests: {}", e.getMessage());
+          }
+        });
+    allFiles.addAll(dataFiles);
   }
 }

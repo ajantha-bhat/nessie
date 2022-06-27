@@ -118,35 +118,18 @@ public final class IdentifiedResultsRepo {
    *     reference.
    */
   public Dataset<Row> collectExpiredContentsAsDataSet(String runId) {
-    return sql(
-        "SELECT * FROM %s WHERE %s = '%s' AND %s = '%s' AND %s = %s",
-        catalogAndTableWithRefName,
-        //
-        COL_GC_RUN_ID,
-        runId,
-        //
-        COL_ROW_TYPE,
-        RowType.CONTENT_OUTPUT.name(),
-        //
-        COL_IS_EXPIRED,
-        true);
+    return getRowDataset(runId, true);
   }
 
   /**
-   * Collect all the contents for the given run id as spark dataset.
+   * Collect the live contents for the given run id as spark dataset.
    *
    * @param runId run id of completed identify task.
+   * @return spark dataset of row where each row is having the live contents per content id per
+   *     reference.
    */
-  public Dataset<Row> collectAllContentsAsDataSet(String runId) {
-    return sql(
-        "SELECT * FROM %s WHERE %s = '%s' AND %s = '%s'",
-        catalogAndTableWithRefName,
-        //
-        COL_GC_RUN_ID,
-        runId,
-        //
-        COL_ROW_TYPE,
-        RowType.CONTENT_OUTPUT.name());
+  public Dataset<Row> collectLiveContentsAsDataSet(String runId) {
+    return getRowDataset(runId, false);
   }
 
   public Optional<String> getLatestCompletedRunID() {
@@ -319,6 +302,21 @@ public final class IdentifiedResultsRepo {
         .collectAsList()
         .get(0)
         .getTimestamp(0);
+  }
+
+  private Dataset<Row> getRowDataset(String runId, boolean isExpired) {
+    return sql(
+        "SELECT * FROM %s WHERE %s = '%s' AND %s = '%s' AND %s = %s",
+        catalogAndTableWithRefName,
+        //
+        COL_GC_RUN_ID,
+        runId,
+        //
+        COL_ROW_TYPE,
+        RowType.CONTENT_OUTPUT.name(),
+        //
+        COL_IS_EXPIRED,
+        isExpired);
   }
 
   @FormatMethod

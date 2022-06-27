@@ -15,14 +15,13 @@
  */
 package org.projectnessie.gc.iceberg;
 
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.CatalogUtil;
@@ -42,6 +41,8 @@ import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 import org.projectnessie.gc.base.IdentifiedResultsRepo;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Nessie GC procedure to expire unused snapshots, uses the information written by {@link
@@ -49,6 +50,7 @@ import org.projectnessie.gc.base.IdentifiedResultsRepo;
  */
 public class ExpireContentsProcedure extends BaseGcProcedure {
 
+  private static final Logger LOG = LoggerFactory.getLogger(ExpireContentsProcedure.class);
   public static final String PROCEDURE_NAME = "expire_contents";
 
   private static final ProcedureParameter[] PARAMETERS =
@@ -83,7 +85,7 @@ public class ExpireContentsProcedure extends BaseGcProcedure {
                 Metadata.empty())
           });
 
-  public enum ExpiredContentType {
+  public enum FileType {
     ICEBERG_MANIFEST,
     ICEBERG_MANIFESTLIST,
     DATA_FILE
@@ -128,28 +130,30 @@ public class ExpireContentsProcedure extends BaseGcProcedure {
         new IdentifiedResultsRepo(
             spark(), gcCatalogName, gcOutputBranchName, gcOutputTableIdentifier);
 
-    runId = updateRunId(gcOutputTableIdentifier, runId, identifiedResultsRepo);
+    if (runId == null) {
+      runId = getLatestCompletedRunID(gcOutputTableIdentifier, identifiedResultsRepo);
+    }
+
     FileIO fileIO = getFileIO(nessieClientConfig);
-    Set<String> expiredManifests = getExpiredManifests(runId, identifiedResultsRepo, fileIO);
-
-    Dataset<Row> expiredContents =
-        getExpiredContents(runId, identifiedResultsRepo, expiredManifests, fileIO);
-
+    Dataset<Row> expiredContents = getExpiredContents(runId, identifiedResultsRepo, fileIO);
     expiredContents.persist();
 
     if (!dryRun) {
       expiredContents.foreach(
           row -> {
             List<String> files = row.getList(2);
-            files.forEach(fileIO::deleteFile);
+            try {
+              files.forEach(fileIO::deleteFile);
+            } catch (UncheckedIOException e) {
+              LOG.warn("Failed to delete the file: {}", e.getMessage());
+            }
           });
     }
 
-    List<InternalRow> outputRows = new ArrayList<>();
     List<Row> rows = expiredContents.collectAsList();
-
     expiredContents.unpersist();
 
+    List<InternalRow> outputRows = new ArrayList<>();
     rows.forEach(
         row ->
             outputRows.add(
@@ -172,60 +176,51 @@ public class ExpireContentsProcedure extends BaseGcProcedure {
         : CatalogUtil.loadFileIO(fileIOImpl, nessieClientConfig, config);
   }
 
-  private static Set<String> getExpiredManifests(
-      String runId, IdentifiedResultsRepo identifiedResultsRepo, FileIO io) {
-    // Read all the content-rows from output table for this run id
-    Dataset<Row> rowDataset = identifiedResultsRepo.collectAllContentsAsDataSet(runId);
-    // from metadata location of each content, compute the manifests array per content
-    // along with a column that says content is expired or not.
-    Dataset<Row> dataset =
-        rowDataset.withColumn(
-            "manifestLocations", computeManifestsUDF(rowDataset.col("metadataLocation"), io));
-    // explode manifests array per content into one manifest per row.
-    dataset =
-        dataset
-            .withColumn("manifestLocations", functions.explode(dataset.col("manifestLocations")))
-            .select("manifestLocations", "isExpired");
-    // compute the globally expired manifests by doing left anti join with locally expired dataset.
-    Dataset<Row> expired =
-        dataset.filter("isExpired=true").dropDuplicates().select("manifestLocations");
-    Dataset<Row> live =
-        dataset.filter("isExpired=false").dropDuplicates().select("manifestLocations");
-    Dataset<Row> unreachableManifests = expired.except(live);
-    return unreachableManifests.select("manifestLocations").collectAsList().stream()
-        .map(row -> row.getString(0))
-        .collect(Collectors.toSet());
+  private static Dataset<Row> getExpiredContents(
+      String runId, IdentifiedResultsRepo identifiedResultsRepo, FileIO fileIO) {
+    // Read the expired content-rows from output table for this run id
+    Dataset<Row> expiredContents = identifiedResultsRepo.collectExpiredContentsAsDataSet(runId);
+    Dataset<Row> expiredContentsDF = computeAllFiles(fileIO, expiredContents);
+    // Read the live content-rows from output table for this run id
+    Dataset<Row> liveContents = identifiedResultsRepo.collectLiveContentsAsDataSet(runId);
+    Dataset<Row> liveContentsDF = computeAllFiles(fileIO, liveContents);
+    // remove the files which are used by live contents
+    Dataset<Row> expiredFilesDF = expiredContentsDF.except(liveContentsDF);
+    // final output
+    // Example output row:
+    // content_id_1, manifestLists, {a,b,c}
+    // content_id_1, manifests, {d,e}
+    // content_id_1, datafiles, {f,g}
+    return expiredFilesDF
+        .groupBy("contentId", "Type")
+        .agg(functions.collect_list("expiredFiles").as("expiredFilesList"))
+        .withColumn("count", functions.size(functions.col("expiredFilesList")));
   }
 
-  private static Dataset<Row> getExpiredContents(
-      String runId,
-      IdentifiedResultsRepo identifiedResultsRepo,
-      Set<String> expiredManifests,
-      FileIO fileIO) {
-    // Read expired the content-rows from output table for this run id
-    Dataset<Row> rowDataset = identifiedResultsRepo.collectExpiredContentsAsDataSet(runId);
-
-    // Only read the globally expired manifests to collect the expired manifestList, manifests,
+  private static Dataset<Row> computeAllFiles(FileIO fileIO, Dataset<Row> rowDataset) {
+    // read the metadata file for each expired contents to collect the expired manifestList,
+    // manifests,
     // datafiles.
     // Example output row:
     // row1: content_id_1,
     //
-    // {manifestLists:a,manifestLists:b,manifestLists:c,manifests:d,manifests:e,datafiles:f,datafiles:g}
+    // {manifestLists#a,manifestLists#b,manifestLists#c,manifests#d,manifests#e,datafiles#f,datafiles#g}
     // row2: content_id_1,
-    //     {manifestLists:a,manifestLists:b,manifests:d,datafiles:f}
+    //     {manifestLists#a,manifestLists#b,manifests#d,datafiles#f}
     Dataset<Row> dataset =
         rowDataset.withColumn(
             "expiredFilesArray",
-            computeExpiredFilesUDF(rowDataset.col("metadataLocation"), expiredManifests, fileIO));
+            computeAllFilesUDF(
+                rowDataset.col("metadataLocation"), rowDataset.col("snapshotId"), fileIO));
     // explode expired files array and drop duplicates.
     // Example output row:
-    // content_id_1, manifestLists:a
-    // content_id_1, manifestLists:b
-    // content_id_1, manifestLists:c
-    // content_id_1, manifests:d
-    // content_id_1, manifests:e
-    // content_id_1, datafiles:f
-    // content_id_1, datafiles:g
+    // content_id_1, manifestLists#a
+    // content_id_1, manifestLists#b
+    // content_id_1, manifestLists#c
+    // content_id_1, manifests#d
+    // content_id_1, manifests#e
+    // content_id_1, datafiles#f
+    // content_id_1, datafiles#g
     dataset =
         dataset
             .withColumn("expiredFilesWithType", functions.explode(dataset.col("expiredFilesArray")))
@@ -250,44 +245,25 @@ public class ExpireContentsProcedure extends BaseGcProcedure {
                 functions.col("contentId"),
                 functions.col("expiredFilesAndType").getItem(0).as("Type"),
                 functions.col("expiredFilesAndType").getItem(1).as("expiredFiles"));
-    // final output
-    // Example output row:
-    // content_id_1, manifestLists, {a,b,c}
-    // content_id_1, manifests, {d,e}
-    // content_id_1, datafiles, {f,g}
-    return dataset
-        .groupBy("contentId", "Type")
-        .agg(functions.collect_list("expiredFiles").as("expiredFilesList"))
-        .withColumn("count", functions.size(functions.col("expiredFilesList")));
+    return dataset;
   }
 
-  private static Column computeManifestsUDF(Column metadataLocation, FileIO fileIO) {
+  private static Column computeAllFilesUDF(
+      Column metadataLocation, Column snapshotId, FileIO fileIO) {
     return functions
-        .udf(new ComputeManifestsUDF(fileIO), DataTypes.createArrayType(DataTypes.StringType))
-        .apply(metadataLocation);
+        .udf(new ComputeAllFilesUDF(fileIO), DataTypes.createArrayType(DataTypes.StringType))
+        .apply(metadataLocation, snapshotId);
   }
 
-  private static Column computeExpiredFilesUDF(
-      Column metadataLocation, Set<String> expiredManifests, FileIO fileIO) {
-    return functions
-        .udf(
-            new ComputeExpiredFilesUDF(fileIO, expiredManifests),
-            DataTypes.createArrayType(DataTypes.StringType))
-        .apply(metadataLocation);
-  }
-
-  private static String updateRunId(
-      String gcOutputTableName, String runId, IdentifiedResultsRepo identifiedResultsRepo) {
-    if (runId == null) {
-      Optional<String> latestCompletedRunID = identifiedResultsRepo.getLatestCompletedRunID();
-      if (!latestCompletedRunID.isPresent()) {
-        throw new RuntimeException(
-            String.format(
-                "No runId present in gc output table : %s, please execute %s first",
-                gcOutputTableName, IdentifyExpiredContentsProcedure.PROCEDURE_NAME));
-      }
-      runId = latestCompletedRunID.get();
+  private static String getLatestCompletedRunID(
+      String gcOutputTableName, IdentifiedResultsRepo identifiedResultsRepo) {
+    Optional<String> latestCompletedRunID = identifiedResultsRepo.getLatestCompletedRunID();
+    if (!latestCompletedRunID.isPresent()) {
+      throw new RuntimeException(
+          String.format(
+              "No runId present in gc output table : %s, please execute %s first",
+              gcOutputTableName, IdentifyExpiredContentsProcedure.PROCEDURE_NAME));
     }
-    return runId;
+    return latestCompletedRunID.get();
   }
 }
