@@ -49,6 +49,7 @@ dependencies {
   testImplementation(project(":nessie-spark-extensions-base_${sparkScala.scalaMajorVersion}")) { testJarCapability() }
   testImplementation("org.apache.iceberg:iceberg-nessie")
   testImplementation("org.apache.iceberg:iceberg-spark-${sparkScala.sparkMajorVersion}_${sparkScala.scalaMajorVersion}")
+  testImplementation("org.apache.iceberg:iceberg-spark-extensions-${sparkScala.sparkMajorVersion}_${sparkScala.scalaMajorVersion}")
   testImplementation("org.apache.iceberg:iceberg-hive-metastore")
   testImplementation("ch.qos.logback:logback-classic")
   testImplementation("org.slf4j:log4j-over-slf4j")

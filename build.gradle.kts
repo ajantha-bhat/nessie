@@ -212,6 +212,9 @@ dependenciesProject("nessie-deps-iceberg", "Iceberg, Spark and related dependenc
       api(
         "org.apache.iceberg:iceberg-spark-extensions-${sparkVersion}_$scalaVersion:$versionIceberg"
       )
+      api(
+        "org.apache.iceberg:iceberg-spark-extensions-${sparkVersion}_$scalaVersion:$versionIceberg"
+      )
     }
   }
   api("org.apache.parquet:parquet-column:$versionParquet")

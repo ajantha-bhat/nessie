@@ -51,6 +51,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.projectnessie.client.api.NessieApiV1;
 import org.projectnessie.client.http.HttpClientBuilder;
 import org.projectnessie.error.NessieConflictException;
@@ -61,9 +62,12 @@ import org.projectnessie.model.ContentKey;
 import org.projectnessie.model.IcebergTable;
 import org.projectnessie.model.ImmutableCommitMeta;
 import org.projectnessie.model.ImmutableOperations;
+import org.projectnessie.model.ImmutableTableReference;
+import org.projectnessie.model.LogResponse;
 import org.projectnessie.model.Operation;
 import org.projectnessie.model.Operations;
 import org.projectnessie.model.Reference;
+import org.projectnessie.model.TableReference;
 import org.projectnessie.model.Tag;
 import org.projectnessie.model.Validation;
 
@@ -672,6 +676,109 @@ public abstract class AbstractSparkSqlTest {
     } finally {
       spark.sessionState().catalogManager().setCurrentCatalog(catalog);
     }
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"testCompactionWithUseReferenceCmd", "main"})
+  void testCompactionWithUseReferenceCmd(String branchName) throws NessieNotFoundException {
+    String branchHash = prepareForCompaction(branchName);
+
+    if ((!branchName.equals("main")
+        && Double.parseDouble(spark.version().substring(0, spark.version().lastIndexOf(".")))
+            <= 3.1)) {
+      // In Iceberg versions >= 0.14.0 with Spark versions <= 3.1,
+      // DataframeReader in Iceberg compaction code uses SparkCatalog, which builds the
+      // IcebergCatalog using the original catalog conf from SQLConf instead of active session conf.
+      // As USE REFERENCE command only updates branch name in active session conf,
+      // compaction will try to use original reference ("main") instead of the one from USE
+      // REFERENCE.
+      // Hence, compaction throws table not found error.
+      assertThatThrownBy(
+              () ->
+                  sql(
+                      "CALL nessie.system.rewrite_data_files(table => 'nessie.db.tbl', options => map('min-input-files','2'))"))
+          .isInstanceOf(RuntimeException.class)
+          .hasMessageContaining("Table db.tbl not found");
+      return;
+    }
+
+    List<Object[]> result =
+        sql(
+            "CALL nessie.system.rewrite_data_files(table => 'nessie.db.tbl', options => map('min-input-files','2'))");
+    // re-written files count is 2 and the added files count is 1
+    validateCompactionResult(branchName, branchHash, result);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"testCompactionWithTableReference", "main"})
+  void testCompactionWithTableReference(String branchName) throws NessieNotFoundException {
+    String branchHash = prepareForCompaction(branchName);
+
+    TableReference tableReference =
+        ImmutableTableReference.builder().reference(branchName).name("tbl").build();
+
+    if (Double.parseDouble(spark.version().substring(0, spark.version().lastIndexOf("."))) <= 3.1) {
+      // In Iceberg versions >= 0.14.0 with Spark versions <= 3.1,
+      // Iceberg compaction procedure parse the table identifier using spark parser
+      // and fails because of backtick syntax used in table reference.
+      // Hence, compaction throws parsing error.
+      // In the newer versions, because of SparkCachedTableCatalog,
+      // table identifier is mapped to UUID and Spark parses UUID successfully.
+      assertThatThrownBy(
+              () ->
+                  sql(
+                      String.format(
+                          "CALL nessie.system.rewrite_data_files(table => 'nessie.db.%s', options => map"
+                              + "('min-input-files','2'))",
+                          tableReference)))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining(
+              String.format("Cannot parse path or identifier: nessie.db.tbl@%s", branchName));
+      return;
+    }
+
+    List<Object[]> result =
+        sql(
+            String.format(
+                "CALL nessie.system.rewrite_data_files(table => 'nessie.db.%s', options => map"
+                    + "('min-input-files','2'))",
+                tableReference));
+    validateCompactionResult(branchName, branchHash, result);
+  }
+
+  private String prepareForCompaction(String branchName) throws NessieNotFoundException {
+    if (!branchName.equals("main")) {
+      assertThat(sql("CREATE BRANCH %s IN nessie FROM main", branchName))
+          .containsExactly(row("Branch", branchName, initialDefaultBranch.getHash()));
+    }
+
+    sql("USE REFERENCE %s IN nessie", branchName);
+    sql("CREATE TABLE nessie.db.tbl (id int, name string)");
+    sql("INSERT INTO nessie.db.tbl select 23, \"test\"");
+    sql("INSERT INTO nessie.db.tbl select 24, \"test24\"");
+
+    String branchHash = api.getReference().refName(branchName).get().getHash();
+    assertThat(sql("CREATE BRANCH dev IN nessie FROM %s", branchName))
+        .containsExactly(row("Branch", "dev", branchHash));
+    return branchHash;
+  }
+
+  private void validateCompactionResult(String branchName, String branchHash, List<Object[]> result)
+      throws NessieNotFoundException {
+    // re-written files count is 2 and the added files count is 1
+    assertThat(result).hasSize(1).containsExactly(row(2, 1));
+
+    // check for compaction commit
+    LogResponse.LogEntry logEntry =
+        api.getCommitLog().refName(branchName).maxRecords(1).get().getLogEntries().get(0);
+    assertThat(logEntry.getCommitMeta().getMessage()).isEqualTo("Iceberg replace against db.tbl");
+
+    assertThat(sql("SELECT * FROM nessie.db.tbl"))
+        .hasSize(2)
+        .containsExactlyInAnyOrder(row(23, "test"), row(24, "test24"));
+
+    // same table in other branch should not be modified
+    assertThat(api.getReference().refName("dev").get().getHash()).isEqualTo(branchHash);
   }
 
   private String defaultBranch() {
