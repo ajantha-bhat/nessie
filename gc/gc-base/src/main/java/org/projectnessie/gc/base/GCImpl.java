@@ -15,6 +15,7 @@
  */
 package org.projectnessie.gc.base;
 
+import com.google.common.hash.BloomFilter;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.HashMap;
@@ -30,6 +31,7 @@ import org.projectnessie.client.StreamingUtil;
 import org.projectnessie.client.api.NessieApiV1;
 import org.projectnessie.error.NessieNotFoundException;
 import org.projectnessie.model.Branch;
+import org.projectnessie.model.Content;
 import org.projectnessie.model.RefLogResponse;
 import org.projectnessie.model.Reference;
 import org.projectnessie.model.ReferenceMetadata;
@@ -100,7 +102,7 @@ public class GCImpl {
   public String identifyExpiredContents(SparkSession session) {
     DistributedIdentifyContents distributedIdentifyContents;
     List<String> allRefs;
-    ContentBloomFilter liveContentsBloomFilter;
+    BloomFilter<Content> liveContentsBloomFilter;
     Map<String, Instant> droppedReferenceTimeMap;
     String runId = UUID.randomUUID().toString();
     Timestamp startedAt = Timestamp.from(Instant.now());
@@ -129,6 +131,22 @@ public class GCImpl {
     // Identify the expired contents
     return distributedIdentifyContents.identifyExpiredContents(
         liveContentsBloomFilter, allRefs, droppedReferenceTimeMap, runId, startedAt);
+  }
+
+  protected static Instant getCutoffTimeForRef(
+      GCParams gcParams, String reference, Map<String, Instant> droppedRefTimeMap) {
+    if (droppedRefTimeMap.containsKey(reference)
+        && gcParams.getDeadReferenceCutOffTimeStamp() != null) {
+      // if the reference is dropped and deadReferenceCutOffTimeStamp is configured, use it.
+      return gcParams.getDeadReferenceCutOffTimeStamp();
+    }
+    return gcParams.getCutOffTimestampPerRef() == null
+        ? gcParams.getDefaultCutOffTimestamp()
+        : gcParams
+            .getCutOffTimestampPerRef()
+            .getOrDefault(
+                GCUtil.deserializeReference(reference).getName(),
+                gcParams.getDefaultCutOffTimestamp());
   }
 
   private long getTotalCommitsInDefaultReference(NessieApiV1 api) {

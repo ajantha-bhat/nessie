@@ -35,8 +35,8 @@ public class NessieIcebergGcSparkCatalog extends SparkCatalog {
 
   @Override
   public Procedure loadProcedure(Identifier procedureIdentifier) throws NoSuchProcedureException {
-    if (GcProcedureUtil.isGcNamespace(procedureIdentifier)) {
-      return GcProcedureUtil.loadGcProcedure(procedureIdentifier, this);
+    if (GCProcedureUtil.isGcNamespace(procedureIdentifier)) {
+      return GCProcedureUtil.loadGcProcedure(procedureIdentifier, this);
     }
     return super.loadProcedure(procedureIdentifier);
   }

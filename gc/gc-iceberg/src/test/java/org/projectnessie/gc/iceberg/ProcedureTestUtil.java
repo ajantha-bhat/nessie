@@ -16,7 +16,7 @@
 package org.projectnessie.gc.iceberg;
 
 import static org.projectnessie.client.NessieConfigConstants.CONF_NESSIE_URI;
-import static org.projectnessie.gc.iceberg.GcProcedureUtil.NAMESPACE;
+import static org.projectnessie.gc.iceberg.GCProcedureUtil.NAMESPACE;
 
 import com.google.errorprone.annotations.FormatMethod;
 import com.google.errorprone.annotations.FormatString;
@@ -34,10 +34,11 @@ final class ProcedureTestUtil {
 
   private ProcedureTestUtil() {}
 
-  static SparkSession getSessionWithGcCatalog(String uri, String location, String catalogClass) {
+  static SparkSession getSessionWithGcCatalog(
+      String uri, String location, String catalogClass, String defaultBranch) {
     SparkConf conf = new SparkConf();
     conf.set("spark.sql.catalog.nessie.uri", uri)
-        .set("spark.sql.catalog.nessie.ref", "main")
+        .set("spark.sql.catalog.nessie.ref", defaultBranch)
         .set("spark.sql.catalog.nessie.warehouse", location)
         .set("spark.sql.catalog.nessie.catalog-impl", "org.apache.iceberg.nessie.NessieCatalog")
         // Use the catalogClass which is loaded with the GC stored procedures in
@@ -68,16 +69,21 @@ final class ProcedureTestUtil {
     // Example Query:
     // CALL nessie.nessie_gc.identify_expired_contents(
     //  default_cut_off_timestamp => TIMESTAMP '2022-05-02 16:39:57.258687',
+    //  dead_reference_cut_off_timestamp => TIMESTAMP '2022-05-02 20:40:57.258687',
     //  nessie_catalog_name => 'nessie',
     //  output_branch_name => 'gcRef',
     //  output_table_identifier => 'singleRefRenameTableBeforeCutoff.gc_results',
     //  nessie_client_configurations => map('nessie.uri','http://localhost:51429/'),
     //  bloom_filter_expected_entries => 5)
+    if (deadReferenceCutoffTime == null) {
+      deadReferenceCutoffTime = cutoffTimeStamp;
+    }
     StringBuilder sb = new StringBuilder();
     String commonParams =
         String.format(
             "CALL %s.%s.%s("
                 + "default_cut_off_timestamp => TIMESTAMP '%s', "
+                + "dead_reference_cut_off_timestamp => TIMESTAMP '%s', "
                 + "nessie_catalog_name => '%s', "
                 + "output_branch_name => '%s', "
                 + "output_table_identifier => '%s', "
@@ -88,6 +94,7 @@ final class ProcedureTestUtil {
             IdentifyExpiredContentsProcedure.PROCEDURE_NAME,
             //
             Timestamp.from(cutoffTimeStamp),
+            Timestamp.from(deadReferenceCutoffTime),
             catalogName,
             gcBranchName,
             outputTableIdentifier,
@@ -95,13 +102,6 @@ final class ProcedureTestUtil {
             uri,
             500);
     sb.append(commonParams);
-    if (deadReferenceCutoffTime != null) {
-      String deadReferenceCutoff =
-          String.format(
-              ",dead_reference_cut_off_timestamp => TIMESTAMP '%s'",
-              Timestamp.from(deadReferenceCutoffTime));
-      sb.append(deadReferenceCutoff);
-    }
     if (cutOffTimeStampPerRef != null && !cutOffTimeStampPerRef.isEmpty()) {
       List<String> entries = new ArrayList<>();
       cutOffTimeStampPerRef.forEach(

@@ -13,16 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.iceberg.spark.procedures;
+package org.projectnessie.gc.base;
 
-import org.apache.spark.sql.connector.catalog.TableCatalog;
+import java.io.Serializable;
+import java.time.Instant;
+import org.immutables.value.Value;
+import org.projectnessie.model.Content;
 
-/**
- * This class is a "bridge" between the Iceberg-Spark package and the Nessie package, because {@link
- * BaseProcedure} is declared as package private.
- */
-public abstract class BaseGcProcedure extends BaseProcedure {
-  protected BaseGcProcedure(TableCatalog tableCatalog) {
-    super(tableCatalog);
-  }
+/** Intermediate object to hold content and some commit info of the content. */
+@Value.Immutable
+public interface ContentWithCommitInfo extends Serializable {
+
+  Content getContent();
+
+  Instant getCommitTime();
+
+  String getCommitHash();
 }

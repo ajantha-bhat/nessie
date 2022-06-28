@@ -18,7 +18,7 @@ package org.projectnessie.gc.iceberg;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
-import org.apache.iceberg.spark.procedures.BaseGcProcedure;
+import org.apache.iceberg.spark.procedures.BaseGCProcedure;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.catalyst.util.MapData;
@@ -43,7 +43,7 @@ import org.projectnessie.gc.base.ImmutableGCParams;
  * the run id of the completed GC task which can be used to query the results stored in the Iceberg
  * table via {@link org.projectnessie.gc.base.IdentifiedResultsRepo}.
  */
-public class IdentifyExpiredContentsProcedure extends BaseGcProcedure {
+public class IdentifyExpiredContentsProcedure extends BaseGCProcedure {
 
   public static final String PROCEDURE_NAME = "identify_expired_contents";
 
@@ -51,6 +51,8 @@ public class IdentifyExpiredContentsProcedure extends BaseGcProcedure {
       new ProcedureParameter[] {
         // Hint: this is in microsecond precision because of Spark's TimestampType
         ProcedureParameter.required("default_cut_off_timestamp", DataTypes.TimestampType),
+        // Hint: this is in microsecond precision because of Spark's TimestampType
+        ProcedureParameter.required("dead_reference_cut_off_timestamp", DataTypes.TimestampType),
         ProcedureParameter.required("nessie_catalog_name", DataTypes.StringType),
         ProcedureParameter.required("output_branch_name", DataTypes.StringType),
         ProcedureParameter.required("output_table_identifier", DataTypes.StringType),
@@ -61,8 +63,6 @@ public class IdentifyExpiredContentsProcedure extends BaseGcProcedure {
             "reference_cut_off_timestamps",
             // Hint: this is in microsecond precision because of Spark's TimestampType
             DataTypes.createMapType(DataTypes.StringType, DataTypes.TimestampType)),
-        // Hint: this is in microsecond precision because of Spark's TimestampType
-        ProcedureParameter.optional("dead_reference_cut_off_timestamp", DataTypes.TimestampType),
         ProcedureParameter.optional("spark_partitions_count", DataTypes.IntegerType),
         ProcedureParameter.optional("bloom_filter_expected_entries", DataTypes.LongType),
         ProcedureParameter.optional("bloom_filter_fpp", DataTypes.DoubleType)
@@ -77,7 +77,7 @@ public class IdentifyExpiredContentsProcedure extends BaseGcProcedure {
           });
 
   private InternalRow resultRow(String runId) {
-    return GcProcedureUtil.internalRow(runId);
+    return GCProcedureUtil.internalRow(runId);
   }
 
   public IdentifyExpiredContentsProcedure(TableCatalog currentCatalog) {
@@ -103,11 +103,12 @@ public class IdentifyExpiredContentsProcedure extends BaseGcProcedure {
   public InternalRow[] call(InternalRow internalRow) {
     ImmutableGCParams.Builder paramsBuilder = ImmutableGCParams.builder();
     paramsBuilder.defaultCutOffTimestamp(GCUtil.getInstantFromMicros(internalRow.getLong(0)));
-    paramsBuilder.nessieCatalogName(internalRow.getString(1));
-    paramsBuilder.outputBranchName(internalRow.getString(2));
-    paramsBuilder.outputTableIdentifier(internalRow.getString(3));
+    paramsBuilder.deadReferenceCutOffTimeStamp(GCUtil.getInstantFromMicros(internalRow.getLong(1)));
+    paramsBuilder.nessieCatalogName(internalRow.getString(2));
+    paramsBuilder.outputBranchName(internalRow.getString(3));
+    paramsBuilder.outputTableIdentifier(internalRow.getString(4));
 
-    MapData map = internalRow.getMap(4);
+    MapData map = internalRow.getMap(5);
     Map<String, String> nessieClientConfig = new HashMap<>();
     for (int i = 0; i < map.numElements(); i++) {
       nessieClientConfig.put(
@@ -115,8 +116,8 @@ public class IdentifyExpiredContentsProcedure extends BaseGcProcedure {
     }
     paramsBuilder.nessieClientConfigs(nessieClientConfig);
 
-    if (!internalRow.isNullAt(5)) {
-      map = internalRow.getMap(5);
+    if (!internalRow.isNullAt(6)) {
+      map = internalRow.getMap(6);
       Map<String, Instant> perReferenceCutoffs = new HashMap<>();
       for (int i = 0; i < map.numElements(); i++) {
         String refName = map.keyArray().getUTF8String(i).toString();
@@ -124,11 +125,6 @@ public class IdentifyExpiredContentsProcedure extends BaseGcProcedure {
         perReferenceCutoffs.put(refName, cutOffTimestamp);
       }
       paramsBuilder.cutOffTimestampPerRef(perReferenceCutoffs);
-    }
-
-    if (!internalRow.isNullAt(6)) {
-      paramsBuilder.deadReferenceCutOffTimeStamp(
-          GCUtil.getInstantFromMicros(internalRow.getLong(6)));
     }
     if (!internalRow.isNullAt(7)) {
       paramsBuilder.sparkPartitionsCount(internalRow.getInt(7));

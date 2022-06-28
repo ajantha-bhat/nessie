@@ -17,9 +17,10 @@ package org.projectnessie.gc.iceberg;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.projectnessie.client.NessieConfigConstants.CONF_NESSIE_URI;
-import static org.projectnessie.gc.iceberg.GcProcedureUtil.NAMESPACE;
+import static org.projectnessie.gc.iceberg.GCProcedureUtil.NAMESPACE;
 
 import java.io.File;
+import java.net.URI;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -28,13 +29,48 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalyst.analysis.NoSuchProcedureException;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.io.TempDir;
 import org.projectnessie.gc.base.AbstractRestGCTest;
 import org.projectnessie.gc.base.IdentifiedResultsRepo;
+import org.projectnessie.jaxrs.ext.NessieJaxRsExtension;
+import org.projectnessie.jaxrs.ext.NessieUri;
+import org.projectnessie.server.store.TableCommitMetaStoreWorker;
+import org.projectnessie.versioned.persist.adapter.DatabaseAdapter;
+import org.projectnessie.versioned.persist.inmem.InmemoryDatabaseAdapterFactory;
+import org.projectnessie.versioned.persist.inmem.InmemoryTestConnectionProviderSource;
+import org.projectnessie.versioned.persist.tests.extension.DatabaseAdapterExtension;
+import org.projectnessie.versioned.persist.tests.extension.NessieDbAdapter;
+import org.projectnessie.versioned.persist.tests.extension.NessieDbAdapterName;
+import org.projectnessie.versioned.persist.tests.extension.NessieExternalDatabase;
 
 /** Tests all the cases from {@link AbstractRestGCTest} using stored procedure. */
-public abstract class AbstractIdentifyProcedure extends AbstractRestGCTest {
+@NessieDbAdapterName(InmemoryDatabaseAdapterFactory.NAME)
+@NessieExternalDatabase(InmemoryTestConnectionProviderSource.class)
+@ExtendWith(DatabaseAdapterExtension.class)
+public class ITJerseyRestIdentifyProcedureInMemory extends AbstractRestGCTest {
+  @NessieDbAdapter(storeWorker = TableCommitMetaStoreWorker.class)
+  static DatabaseAdapter databaseAdapter;
+
+  @RegisterExtension
+  static NessieJaxRsExtension server = new NessieJaxRsExtension(() -> databaseAdapter);
+
+  private static URI nessieUri;
+
+  @BeforeAll
+  static void setNessieUri(@NessieUri URI uri) {
+    nessieUri = uri;
+  }
+
+  @Override
+  @BeforeEach
+  public void setUp() {
+    init(nessieUri);
+  }
 
   @TempDir File tempDir;
 
@@ -46,7 +82,7 @@ public abstract class AbstractIdentifyProcedure extends AbstractRestGCTest {
   @Override
   protected SparkSession getSparkSession() {
     return ProcedureTestUtil.getSessionWithGcCatalog(
-        getUri().toString(), tempDir.toURI().toString(), GC_SPARK_CATALOG);
+        getUri().toString(), tempDir.toURI().toString(), GC_SPARK_CATALOG, "main");
   }
 
   @Override
@@ -89,6 +125,7 @@ public abstract class AbstractIdentifyProcedure extends AbstractRestGCTest {
                           String.format(
                               "CALL %s.%s.%s("
                                   + "default_cut_off_timestamp => %d, "
+                                  + "dead_reference_cut_off_timestamp => %d, "
                                   + "nessie_catalog_name => '%s', "
                                   + "output_branch_name => '%s', "
                                   + "output_table_identifier => '%s', "
@@ -98,6 +135,7 @@ public abstract class AbstractIdentifyProcedure extends AbstractRestGCTest {
                               // Use namespace that doesn't contain the GC stored procedures
                               "other_namespace",
                               IdentifyExpiredContentsProcedure.PROCEDURE_NAME,
+                              Instant.now().getEpochSecond(),
                               Instant.now().getEpochSecond(),
                               CATALOG_NAME,
                               GC_BRANCH_NAME,
@@ -116,6 +154,7 @@ public abstract class AbstractIdentifyProcedure extends AbstractRestGCTest {
                       .sql(
                           String.format(
                               "CALL %s.%s.%s("
+                                  + "dead_reference_cut_off_timestamp => %d, "
                                   + "nessie_catalog_name => '%s', "
                                   + "output_branch_name => '%s', "
                                   + "output_table_identifier => '%s', "
@@ -124,6 +163,8 @@ public abstract class AbstractIdentifyProcedure extends AbstractRestGCTest {
                               CATALOG_NAME,
                               NAMESPACE,
                               IdentifyExpiredContentsProcedure.PROCEDURE_NAME,
+                              //
+                              Instant.now().getEpochSecond(),
                               CATALOG_NAME,
                               GC_BRANCH_NAME,
                               GC_TABLE_NAME,

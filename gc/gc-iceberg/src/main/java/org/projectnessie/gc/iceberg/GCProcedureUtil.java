@@ -18,7 +18,7 @@ package org.projectnessie.gc.iceberg;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
-import org.apache.iceberg.spark.procedures.BaseGcProcedure;
+import org.apache.iceberg.spark.procedures.BaseGCProcedure;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.catalyst.analysis.NoSuchProcedureException;
 import org.apache.spark.sql.catalyst.util.ArrayData;
@@ -29,9 +29,9 @@ import scala.collection.JavaConverters;
 import scala.collection.Seq;
 import scala.reflect.ClassTag;
 
-final class GcProcedureUtil {
+final class GCProcedureUtil {
 
-  private GcProcedureUtil() {}
+  private GCProcedureUtil() {}
 
   static final String NAMESPACE = "nessie_gc";
   static final String[] NAMESPACE_ARRAY = {NAMESPACE};
@@ -40,7 +40,7 @@ final class GcProcedureUtil {
     return Arrays.equals(NAMESPACE_ARRAY, identifier.namespace());
   }
 
-  static BaseGcProcedure loadGcProcedure(Identifier procedureIdentifier, TableCatalog catalog)
+  static BaseGCProcedure loadGcProcedure(Identifier procedureIdentifier, TableCatalog catalog)
       throws NoSuchProcedureException {
     switch (procedureIdentifier.name()) {
       case IdentifyExpiredContentsProcedure.PROCEDURE_NAME:
@@ -56,7 +56,7 @@ final class GcProcedureUtil {
     Seq<Object> seq =
         JavaConverters.collectionAsScalaIterable(
                 Arrays.stream(columns)
-                    .map(GcProcedureUtil::toSparkObject)
+                    .map(GCProcedureUtil::toSparkObject)
                     .collect(Collectors.toList()))
             .toSeq();
     return InternalRow.fromSeq(seq);
@@ -69,7 +69,7 @@ final class GcProcedureUtil {
     if (object instanceof List) {
       List<?> converted =
           ((List<?>) object)
-              .stream().map(GcProcedureUtil::toSparkObject).collect(Collectors.toList());
+              .stream().map(GCProcedureUtil::toSparkObject).collect(Collectors.toList());
       return ArrayData.toArrayData(
           JavaConverters.collectionAsScalaIterable(converted).toArray(ClassTag.Any()));
     }

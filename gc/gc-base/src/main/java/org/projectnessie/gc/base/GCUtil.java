@@ -21,14 +21,9 @@ import java.lang.reflect.InvocationTargetException;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Map;
-import java.util.Spliterator;
-import java.util.Spliterators;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.apache.commons.lang3.mutable.MutableBoolean;
 import org.apache.iceberg.CatalogUtil;
 import org.apache.iceberg.nessie.NessieCatalog;
 import org.apache.spark.sql.SparkSession;
@@ -39,7 +34,6 @@ import org.projectnessie.client.http.HttpClientBuilder;
 import org.projectnessie.error.NessieConflictException;
 import org.projectnessie.error.NessieNotFoundException;
 import org.projectnessie.model.Branch;
-import org.projectnessie.model.LogResponse;
 import org.projectnessie.model.Reference;
 import scala.Tuple2;
 
@@ -115,7 +109,7 @@ public final class GCUtil {
   public static NessieApiV1 getApi(Map<String, String> configuration) {
     String clientBuilderClassName =
         configuration.get(NessieConfigConstants.CONF_NESSIE_CLIENT_BUILDER_IMPL);
-    NessieClientBuilder builder;
+    NessieClientBuilder<?> builder;
     if (clientBuilderClassName == null) {
       // Use the default HttpClientBuilder
       builder = HttpClientBuilder.builder();
@@ -139,51 +133,7 @@ public final class GCUtil {
             String.format("Could not initialize '%s': ", clientBuilderClassName), e);
       }
     }
-    return (NessieApiV1) builder.fromConfig(configuration::get).build(NessieApiV1.class);
-  }
-
-  /**
-   * Traverse the live commits stream till an entry is seen for each live content key and at least
-   * reached expired commits.
-   *
-   * @param foundAllLiveCommitHeadsBeforeCutoffTime condition to stop traversing
-   * @param commits stream of {@link LogResponse.LogEntry}
-   * @param commitHandler consumer of {@link LogResponse.LogEntry}
-   * @return last visited commit hash. It is the commit hash when all the live contents heads at the
-   *     cutoff time are found.
-   */
-  static String traverseLiveCommits(
-      MutableBoolean foundAllLiveCommitHeadsBeforeCutoffTime,
-      Stream<LogResponse.LogEntry> commits,
-      Consumer<LogResponse.LogEntry> commitHandler) {
-    AtomicReference<String> lastVisitedHash = new AtomicReference<>();
-    Spliterator<LogResponse.LogEntry> src = commits.spliterator();
-    // Use a Spliterator to limit the processed commits to the "live" commits - i.e. stop traversing
-    // the expired commits once an entry is seen for each live content key.
-    new Spliterators.AbstractSpliterator<LogResponse.LogEntry>(src.estimateSize(), 0) {
-      private boolean more = true;
-
-      @Override
-      public boolean tryAdvance(Consumer<? super LogResponse.LogEntry> action) {
-        if (!more) {
-          return false;
-        }
-        more =
-            src.tryAdvance(
-                logEntry -> {
-                  // traverse until all the live commit heads are found for each live keys
-                  // at the time of cutoff time.
-                  if (foundAllLiveCommitHeadsBeforeCutoffTime.isFalse()) {
-                    action.accept(logEntry);
-                  }
-                  lastVisitedHash.set(logEntry.getCommitMeta().getHash());
-                });
-        more = more && foundAllLiveCommitHeadsBeforeCutoffTime.isFalse();
-        return more;
-      }
-    }.forEachRemaining(commitHandler);
-
-    return lastVisitedHash.get();
+    return builder.fromConfig(configuration::get).build(NessieApiV1.class);
   }
 
   private static Map<String, String> catalogConfWithRef(

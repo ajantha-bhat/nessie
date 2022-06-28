@@ -15,16 +15,18 @@
  */
 package org.projectnessie.gc.base;
 
+import com.google.common.hash.BloomFilter;
 import java.io.Serializable;
 import javax.annotation.Nullable;
 import org.immutables.value.Value;
+import org.projectnessie.model.Content;
 
 /** Intermediate object to hold the per reference results from identify live contents gc step. */
 @Value.Immutable
 public interface LiveContentsResult extends Serializable {
 
   @Nullable
-  ContentBloomFilter getBloomFilter();
+  BloomFilter<Content> getBloomFilter();
 
   String getReferenceName();
 

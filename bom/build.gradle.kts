@@ -40,6 +40,7 @@ dependencies {
     api(project(":nessie-compatibility-jersey"))
     api(project(":nessie-gc"))
     api(project(":nessie-gc-base"))
+    api(project(":nessie-gc-iceberg"))
     api(project(":nessie-model"))
     api(project(":nessie-perftest"))
     api(project(":nessie-server-parent"))

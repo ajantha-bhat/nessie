@@ -35,8 +35,7 @@ public interface GCParams extends Serializable {
   /** Default cutoff time for all the references. */
   Instant getDefaultCutOffTimestamp();
 
-  /** Optional cutoff time for all the dead references. */
-  @Nullable
+  /** cutoff time for all the dead references. */
   Instant getDeadReferenceCutOffTimeStamp();
 
   /**
@@ -91,6 +90,14 @@ public interface GCParams extends Serializable {
     double bloomFilterFpp = getBloomFilterFpp();
     if (!(bloomFilterFpp > 0.0d && bloomFilterFpp < 1.0d)) {
       throw new IllegalArgumentException("bloomFilterFpp has invalid value: " + bloomFilterFpp);
+    }
+    Instant defaultCutOffTimestamp = getDefaultCutOffTimestamp();
+    Instant deadReferenceCutOffTimeStamp = getDeadReferenceCutOffTimeStamp();
+    if (deadReferenceCutOffTimeStamp.compareTo(defaultCutOffTimestamp) < 0) {
+      throw new IllegalArgumentException(
+          String.format(
+              "deadReferenceCutOffTimeStamp:%s should not be less than defaultCutOffTimestamp:%s",
+              deadReferenceCutOffTimeStamp, defaultCutOffTimestamp));
     }
   }
 }

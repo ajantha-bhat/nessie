@@ -13,26 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.projectnessie.gc.base;
+package org.apache.iceberg.spark.procedures;
 
-import java.util.function.Predicate;
-import org.immutables.value.Value;
-import org.projectnessie.client.api.NessieApiV1;
-import org.projectnessie.model.CommitMeta;
-import org.projectnessie.model.Reference;
+import org.apache.spark.sql.connector.catalog.TableCatalog;
 
 /**
- * Just a wrapper class for input arguments of few methods in {@link
- * IdentifyLiveContentsPerExecutor} which contains the current state params for GC.
+ * This class is a "bridge" between the Iceberg-Spark package and the Nessie package, because {@link
+ * BaseProcedure} is declared as package private.
  */
-@Value.Immutable
-interface GCStateParamsPerTask {
-
-  NessieApiV1 getApi();
-
-  Reference getReference();
-
-  Predicate<CommitMeta> getLiveCommitPredicate();
-
-  long getBloomFilterSize();
+public abstract class BaseGCProcedure extends BaseProcedure {
+  protected BaseGCProcedure(TableCatalog tableCatalog) {
+    super(tableCatalog);
+  }
 }

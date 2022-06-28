@@ -21,9 +21,7 @@ plugins {
   `nessie-conventions`
 }
 
-extra["maven.artifactId"] = "nessie-gc-iceberg"
-
-extra["maven.name"] = "Nessie - GC - Iceberg"
+extra["maven.name"] = "Nessie - GC - Iceberg Implementation"
 
 val scalaVersion = dependencyVersion("versionScala2_12")
 
@@ -41,10 +39,10 @@ dependencies {
   compileOnly("org.immutables:value-annotations")
   annotationProcessor("org.immutables:value-processor")
 
-  compileOnly(projects.clients.client)
+  compileOnly(project(":nessie-client"))
   compileOnly("org.eclipse.microprofile.openapi:microprofile-openapi-api")
   compileOnly("jakarta.validation:jakarta.validation-api")
-  implementation(projects.gc.gcBase)
+  implementation(project(":nessie-gc-base"))
   implementation("com.fasterxml.jackson.core:jackson-annotations")
   implementation("com.google.code.findbugs:jsr305")
   implementation("com.google.guava:guava")
@@ -60,8 +58,8 @@ dependencies {
   testImplementation(platform(rootProject))
 
   testCompileOnly("org.eclipse.microprofile.openapi:microprofile-openapi-api")
-  testImplementation(projects.servers.jaxRsTestextension)
-  testImplementation(projects.servers.jaxRsTests)
+  testImplementation(project(":nessie-jaxrs-testextension"))
+  testImplementation(project(":nessie-jaxrs-tests"))
   testImplementation("org.apache.spark:spark-sql_2.12") {
     forSpark(sparkVersion)
     exclude("com.sun.jersey", "jersey-servlet")
@@ -72,9 +70,9 @@ dependencies {
   testCompileOnly(platform("com.fasterxml.jackson:jackson-bom"))
   testCompileOnly("com.fasterxml.jackson.core:jackson-annotations")
 
-  testImplementation(projects.clients.sparkExtensionsBase) { testJarCapability() }
-  testImplementation(projects.clients.spark31Extensions)
-  testImplementation(projects.gc.gcBase) { testJarCapability() }
+  testImplementation(project(":nessie-spark-extensions-base")) { testJarCapability() }
+  testImplementation(project(":nessie-spark-extensions"))
+  testImplementation(project(":nessie-gc-base")) { testJarCapability() }
   testImplementation("org.apache.iceberg:iceberg-nessie")
   testImplementation("org.apache.iceberg:iceberg-spark3")
   testImplementation("org.apache.iceberg:iceberg-spark3-extensions")

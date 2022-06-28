@@ -18,7 +18,6 @@ package org.projectnessie.gc.base;
 import static org.apache.iceberg.types.Types.NestedField.optional;
 import static org.apache.iceberg.types.Types.NestedField.required;
 
-import com.google.common.collect.ImmutableMap;
 import com.google.errorprone.annotations.FormatMethod;
 import com.google.errorprone.annotations.FormatString;
 import java.sql.Timestamp;
@@ -26,6 +25,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
@@ -118,7 +118,7 @@ public final class IdentifiedResultsRepo {
    *     reference.
    */
   public Dataset<Row> collectExpiredContentsAsDataSet(String runId) {
-    return getRowDataset(runId, true);
+    return getContentRowsForRunId(runId, true);
   }
 
   /**
@@ -129,7 +129,7 @@ public final class IdentifiedResultsRepo {
    *     reference.
    */
   public Dataset<Row> collectLiveContentsAsDataSet(String runId) {
-    return getRowDataset(runId, false);
+    return getContentRowsForRunId(runId, false);
   }
 
   public Optional<String> getLatestCompletedRunID() {
@@ -222,6 +222,13 @@ public final class IdentifiedResultsRepo {
         null);
   }
 
+  /**
+   * Finds the latest completed checkpoint. Checkpoint is considered as completed when it has a
+   * checkpoint marker row (written when the expiry operation is successful).
+   *
+   * @return a map of referenceName and checkpoint (its last traversed live commit hash from the
+   *     head).
+   */
   Map<String, String> collectLatestCommitCheckPoint() {
     // get the latest run id with marker row
     Dataset<Row> latestRunIdWithMarker =
@@ -245,9 +252,8 @@ public final class IdentifiedResultsRepo {
     // collect all the checkpoint for the run id
     List<Row> rows =
         sql(
-                "SELECT %s,%s,%s FROM %s WHERE %s = '%s' AND %s = '%s'",
+                "SELECT %s,%s FROM %s WHERE %s = '%s' AND %s = '%s'",
                 COL_REFERENCE_NAME,
-                COL_HASH_ON_REFERENCE,
                 COL_COMMIT_HASH,
                 //
                 catalogAndTableWithRefName,
@@ -258,9 +264,9 @@ public final class IdentifiedResultsRepo {
                 COL_ROW_TYPE,
                 RowType.CHECKPOINT.name())
             .collectAsList();
-    ImmutableMap.Builder<String, String> commitCheckPoints = ImmutableMap.builder();
-    rows.forEach(row -> commitCheckPoints.put(row.getString(0), row.getString(2)));
-    return commitCheckPoints.build();
+
+    return rows.stream()
+        .collect(Collectors.toMap(row -> row.getString(0), row -> row.getString(1)));
   }
 
   static void createTableIfAbsent(
@@ -304,7 +310,7 @@ public final class IdentifiedResultsRepo {
         .getTimestamp(0);
   }
 
-  private Dataset<Row> getRowDataset(String runId, boolean isExpired) {
+  private Dataset<Row> getContentRowsForRunId(String runId, boolean isExpired) {
     return sql(
         "SELECT * FROM %s WHERE %s = '%s' AND %s = '%s' AND %s = %s",
         catalogAndTableWithRefName,

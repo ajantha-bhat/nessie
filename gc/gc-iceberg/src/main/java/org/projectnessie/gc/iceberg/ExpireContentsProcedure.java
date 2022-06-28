@@ -27,11 +27,13 @@ import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.CatalogUtil;
 import org.apache.iceberg.hadoop.HadoopFileIO;
 import org.apache.iceberg.io.FileIO;
-import org.apache.iceberg.spark.procedures.BaseGcProcedure;
+import org.apache.iceberg.spark.procedures.BaseGCProcedure;
+import org.apache.spark.api.java.function.MapFunction;
 import org.apache.spark.sql.Column;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.catalyst.InternalRow;
+import org.apache.spark.sql.catalyst.encoders.RowEncoder;
 import org.apache.spark.sql.catalyst.util.MapData;
 import org.apache.spark.sql.connector.catalog.TableCatalog;
 import org.apache.spark.sql.connector.iceberg.catalog.ProcedureParameter;
@@ -48,7 +50,7 @@ import org.slf4j.LoggerFactory;
  * Nessie GC procedure to expire unused snapshots, uses the information written by {@link
  * IdentifyExpiredContentsProcedure} via {@link org.projectnessie.gc.base.IdentifiedResultsRepo}.
  */
-public class ExpireContentsProcedure extends BaseGcProcedure {
+public class ExpireContentsProcedure extends BaseGCProcedure {
 
   private static final Logger LOG = LoggerFactory.getLogger(ExpireContentsProcedure.class);
   public static final String PROCEDURE_NAME = "expire_contents";
@@ -136,28 +138,19 @@ public class ExpireContentsProcedure extends BaseGcProcedure {
 
     FileIO fileIO = getFileIO(nessieClientConfig);
     Dataset<Row> expiredContents = getExpiredContents(runId, identifiedResultsRepo, fileIO);
-    expiredContents.persist();
-
     if (!dryRun) {
-      expiredContents.foreach(
-          row -> {
-            List<String> files = row.getList(2);
-            try {
-              files.forEach(fileIO::deleteFile);
-            } catch (UncheckedIOException e) {
-              LOG.warn("Failed to delete the file: {}", e.getMessage());
-            }
-          });
+      expiredContents =
+          expiredContents.map(
+              new DeleteFunction(fileIO), RowEncoder.apply(expiredContents.schema()));
     }
 
     List<Row> rows = expiredContents.collectAsList();
-    expiredContents.unpersist();
 
     List<InternalRow> outputRows = new ArrayList<>();
     rows.forEach(
         row ->
             outputRows.add(
-                GcProcedureUtil.internalRow(
+                GCProcedureUtil.internalRow(
                     row.getString(0), row.getString(1), row.getInt(3), row.getList(2))));
 
     if (!dryRun && !outputRows.isEmpty()) {
@@ -265,5 +258,30 @@ public class ExpireContentsProcedure extends BaseGcProcedure {
               gcOutputTableName, IdentifyExpiredContentsProcedure.PROCEDURE_NAME));
     }
     return latestCompletedRunID.get();
+  }
+
+  private static class DeleteFunction implements MapFunction<Row, Row> {
+    private final FileIO fileIO;
+
+    private DeleteFunction(FileIO fileIO) {
+      this.fileIO = fileIO;
+    }
+
+    @Override
+    public Row call(Row value) {
+      List<String> files = value.getList(2);
+      files.forEach(
+          file -> {
+            try {
+              fileIO.deleteFile(file);
+            } catch (UncheckedIOException e) {
+              LOG.warn(
+                  "Failed to read the data/delete file. Might have deleted in the previous GC run."
+                      + " Hence, Ignoring the error.",
+                  e);
+            }
+          });
+      return value;
+    }
   }
 }
