@@ -28,6 +28,7 @@ import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
+import org.projectnessie.error.NessieNotFoundException;
 import org.projectnessie.gc.base.GCImpl;
 import org.projectnessie.gc.base.GCUtil;
 import org.projectnessie.gc.base.ImmutableGCParams;
@@ -136,7 +137,11 @@ public class IdentifyExpiredContentsProcedure extends BaseGCProcedure {
       paramsBuilder.bloomFilterFpp(internalRow.getDouble(9));
     }
     GCImpl gcImpl = new GCImpl(paramsBuilder.build());
-    String runId = gcImpl.identifyExpiredContents(spark());
-    return new InternalRow[] {resultRow(runId)};
+    try {
+      String runId = gcImpl.identifyExpiredContents(spark());
+      return new InternalRow[] {resultRow(runId)};
+    } catch (NessieNotFoundException e) {
+      throw new RuntimeException(e);
+    }
   }
 }

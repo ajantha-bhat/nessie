@@ -18,9 +18,10 @@ package org.projectnessie.gc.base;
 import com.google.common.hash.BloomFilter;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Encoders;
@@ -68,23 +69,41 @@ public class DistributedIdentifyContents {
             .parallelize(references, getPartitionsCount(gcParams, references))
             .map(executor.computeLiveContentsFunc(bloomFilterSize, droppedRefTimeMap))
             .collect();
-    List<BloomFilter<Content>> filters = new ArrayList<>();
-    List<Row> checkPointRows = new ArrayList<>();
-    liveContentsResults.forEach(
-        result -> {
-          if (result.getBloomFilter() != null) {
-            filters.add(result.getBloomFilter());
-          }
-          checkPointRows.add(IdentifiedResultsRepo.createCheckPointRow(runId, startedAt, result));
-        });
+
+    AtomicReference<BloomFilter<Content>> output = new AtomicReference<>();
+    // write the checkpoint
+    List<Row> checkpointRows =
+        liveContentsResults.stream()
+            .map(
+                liveContentsResult -> {
+                  // merge the bloom filters from each task into one
+                  if (liveContentsResult.getBloomFilter() != null) {
+                    if (output.get() == null) {
+                      output.set(liveContentsResult.getBloomFilter());
+                    } else {
+                      output.get().putAll(liveContentsResult.getBloomFilter());
+                    }
+                  }
+                  // create checkpoint row
+                  return IdentifiedResultsRepo.createCheckPointRow(
+                      runId, startedAt, liveContentsResult);
+                })
+            .collect(Collectors.toList());
+
     IdentifiedResultsRepo identifiedResultsRepo =
         new IdentifiedResultsRepo(
             session,
             gcParams.getNessieCatalogName(),
             gcParams.getOutputBranchName(),
             gcParams.getOutputTableIdentifier());
-    identifiedResultsRepo.writeToOutputTable(checkPointRows);
-    return mergeLiveContentResults(filters, gcParams.getBloomFilterFpp());
+    identifiedResultsRepo.writeToOutputTable(checkpointRows);
+
+    // Since we merged bloom filters log in case their quality deteriorated
+    if (output.get() != null && output.get().expectedFpp() > gcParams.getBloomFilterFpp()) {
+      LOGGER.info(
+          "Fpp of merged bloom filter is {}", String.format("%.3f", output.get().expectedFpp()));
+    }
+    return output.get();
   }
 
   /**
@@ -132,27 +151,5 @@ public class DistributedIdentifyContents {
     return gcParams.getSparkPartitionsCount() == null
         ? references.size()
         : gcParams.getSparkPartitionsCount();
-  }
-
-  private static BloomFilter<Content> mergeLiveContentResults(
-      List<BloomFilter<Content>> bloomFilters, double bloomFilterFpp) {
-    if (bloomFilters.isEmpty()) {
-      return null;
-    }
-    BloomFilter<Content> output = bloomFilters.get(0);
-    bloomFilters
-        .subList(1, bloomFilters.size())
-        .forEach(
-            filter -> {
-              if (filter != null) {
-                output.putAll(filter);
-              }
-            });
-
-    // Since we merged bloom filters log in case their quality deteriorated
-    if (output.expectedFpp() > bloomFilterFpp) {
-      LOGGER.info("Fpp of merged bloom filter is {}", String.format("%.3f", output.expectedFpp()));
-    }
-    return output;
   }
 }

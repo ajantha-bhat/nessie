@@ -16,13 +16,11 @@
 package org.projectnessie.gc.base;
 
 import com.google.common.hash.BloomFilter;
-import java.io.Serializable;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.OptionalInt;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
 import org.apache.spark.TaskContext;
 import org.apache.spark.sql.Row;
@@ -45,14 +43,13 @@ import scala.collection.JavaConverters;
  * Contains the methods to identify expired contents that execute in spark executor for {@link
  * GCImpl#identifyExpiredContents(SparkSession)}.
  */
-public class IdentifyExpiredContentsPerExecutor implements Serializable {
+public class IdentifyExpiredContentsPerExecutor extends IdentifyContentsPerExecutor {
 
-  private final GCParams gcParams;
   private static final Logger LOGGER =
       LoggerFactory.getLogger(IdentifyExpiredContentsPerExecutor.class);
 
   public IdentifyExpiredContentsPerExecutor(GCParams gcParams) {
-    this.gcParams = gcParams;
+    super(gcParams);
   }
 
   protected SerializableFunction1<scala.collection.Iterator<String>, scala.collection.Iterator<Row>>
@@ -101,7 +98,7 @@ public class IdentifyExpiredContentsPerExecutor implements Serializable {
                       liveContentsBloomFilter,
                       runId,
                       startedAt,
-                      GCImpl.getCutoffTimeForRef(gcParams, reference, droppedRefTimeMap),
+                      getCutoffTimeForRef(reference, droppedRefTimeMap),
                       commitCheckPoints.get(ref.getName())))
               .toTraversable();
         });
@@ -115,31 +112,6 @@ public class IdentifyExpiredContentsPerExecutor implements Serializable {
       Timestamp startedAt,
       Instant cutoffTime,
       String commitCheckPoint) {
-    // To filter only the commits that are expired based on cutoff time.
-    // cutoff time also acts as a commit protection time for ongoing
-    // or new commits created after step-1 of identify gc.
-    Predicate<Instant> cutoffTimePredicate = commitTime -> commitTime.compareTo(cutoffTime) < 0;
-    // when no live bloom filter exist for this content id, all the contents are
-    // definitely expired.
-
-    // Checking against live contents bloom filter can result
-    //    no  --> content is considered expired (filter cannot say 'no' for live
-    // contents).
-    //    may be  -->  content is considered live (filter can say 'maybe' for expired
-    // contents).
-    // Worst case few expired contents will be considered live due to bloom filter
-    // fpp.
-    // But live contents never be considered as expired.
-    Predicate<Content> expiredContentPredicate =
-        content ->
-            (liveContentsBloomFilter == null || !liveContentsBloomFilter.mightContain(content));
-    Predicate<Content> validSnapshotPredicate =
-        content ->
-            ((content instanceof IcebergTable && ((IcebergTable) content).getSnapshotId() != -1)
-                || (content instanceof IcebergView
-                    && ((IcebergView) content).getVersionId() != -1));
-
-    AtomicBoolean foundCheckPoint = new AtomicBoolean(false);
     try {
       Iterator<ImmutableContentWithCommitInfo> iterator =
           StreamingUtil.getCommitLogStream(
@@ -158,9 +130,9 @@ public class IdentifyExpiredContentsPerExecutor implements Serializable {
                           .map(Operation.Put::getContent)
                           .filter(
                               content ->
-                                  (content.getType() == Content.Type.ICEBERG_TABLE
-                                      || content.getType() == Content.Type.ICEBERG_VIEW))
-                          .filter(validSnapshotPredicate)
+                                  ((content instanceof IcebergTable
+                                          || content instanceof IcebergView)
+                                      && getSnapshotId(content) != -1))
                           .map(
                               content ->
                                   ImmutableContentWithCommitInfo.builder()
@@ -171,20 +143,42 @@ public class IdentifyExpiredContentsPerExecutor implements Serializable {
               .iterator();
 
       return new Iterator<Row>() {
+        // To filter only the commits that are expired based on cutoff time.
+        // cutoff time also acts as a commit protection time for ongoing
+        // or new commits created after step-1 of identify gc.
+        final Predicate<Instant> cutoffTimePredicate =
+            commitTime -> commitTime.compareTo(cutoffTime) < 0;
+
+        // when no live bloom filter exist for this content id, all the contents are
+        // definitely expired.
+        // Checking against live contents bloom filter can result
+        //    no  --> content is considered expired (filter cannot say 'no' for live
+        // contents).
+        //    may be  -->  content is considered live (filter can say 'maybe' for expired
+        // contents).
+        // Worst case few expired contents will be considered live due to bloom filter
+        // fpp.
+        // But live contents never be considered as expired.
+        final Predicate<Content> expiredContentPredicate =
+            content ->
+                (liveContentsBloomFilter == null || !liveContentsBloomFilter.mightContain(content));
+
+        boolean foundCheckPoint = false;
+
         @Override
         public boolean hasNext() {
           // when the checkpoint is reached, return false so that iterator won't be consumed.
-          return iterator.hasNext() && !foundCheckPoint.get();
+          return iterator.hasNext() && !foundCheckPoint;
         }
 
         @Override
         public Row next() {
           ContentWithCommitInfo contentWithCommitInfo = iterator.next();
 
-          if (!foundCheckPoint.get()) {
-            foundCheckPoint.set(
+          if (!foundCheckPoint) {
+            foundCheckPoint =
                 commitCheckPoint != null
-                    && commitCheckPoint.equals(contentWithCommitInfo.getCommitHash()));
+                    && commitCheckPoint.equals(contentWithCommitInfo.getCommitHash());
           }
 
           boolean isExpired =

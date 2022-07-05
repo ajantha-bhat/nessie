@@ -33,7 +33,6 @@ import org.projectnessie.error.NessieNotFoundException;
 import org.projectnessie.model.Branch;
 import org.projectnessie.model.Content;
 import org.projectnessie.model.RefLogResponse;
-import org.projectnessie.model.Reference;
 import org.projectnessie.model.ReferenceMetadata;
 import org.projectnessie.model.Tag;
 import org.slf4j.Logger;
@@ -75,7 +74,8 @@ public class GCImpl {
    * of cutoff time to support the time travel.
    *
    * <p>While traversing the expired commits (commit that is expired based on cutoff time), if it is
-   * a head commit content for its key, add it to bloom filter. Else move to next expired commit.
+   * the latest commit content for its key, add it to bloom filter. Else move to next expired
+   * commit.
    *
    * <p>Stop traversing the expired commits if each live content key has processed one live commit
    * for it. This is an optimization to avoid traversing all the commits.
@@ -99,7 +99,7 @@ public class GCImpl {
    * @param session spark session for distributed computation
    * @return current run id of the completed gc task
    */
-  public String identifyExpiredContents(SparkSession session) {
+  public String identifyExpiredContents(SparkSession session) throws NessieNotFoundException {
     DistributedIdentifyContents distributedIdentifyContents;
     List<String> allRefs;
     BloomFilter<Content> liveContentsBloomFilter;
@@ -108,13 +108,16 @@ public class GCImpl {
     Timestamp startedAt = Timestamp.from(Instant.now());
     try (NessieApiV1 api = GCUtil.getApi(gcParams.getNessieClientConfigs())) {
       distributedIdentifyContents = new DistributedIdentifyContents(session, gcParams);
-      List<Reference> liveReferences = api.getAllReferences().get().getReferences();
+
       droppedReferenceTimeMap = collectDeadReferences(api);
+
       // As this list of references is passed from Spark driver to executor,
       // using available Immutables JSON serialization instead of adding java serialization to the
       // classes.
       allRefs =
-          liveReferences.stream().map(GCUtil::serializeReference).collect(Collectors.toList());
+          StreamingUtil.getAllReferencesStream(api, builder -> builder, OptionalInt.empty())
+              .map(GCUtil::serializeReference)
+              .collect(Collectors.toList());
       if (droppedReferenceTimeMap.size() > 0) {
         allRefs.addAll(droppedReferenceTimeMap.keySet());
       }
@@ -131,22 +134,6 @@ public class GCImpl {
     // Identify the expired contents
     return distributedIdentifyContents.identifyExpiredContents(
         liveContentsBloomFilter, allRefs, droppedReferenceTimeMap, runId, startedAt);
-  }
-
-  protected static Instant getCutoffTimeForRef(
-      GCParams gcParams, String reference, Map<String, Instant> droppedRefTimeMap) {
-    if (droppedRefTimeMap.containsKey(reference)
-        && gcParams.getDeadReferenceCutOffTimeStamp() != null) {
-      // if the reference is dropped and deadReferenceCutOffTimeStamp is configured, use it.
-      return gcParams.getDeadReferenceCutOffTimeStamp();
-    }
-    return gcParams.getCutOffTimestampPerRef() == null
-        ? gcParams.getDefaultCutOffTimestamp()
-        : gcParams
-            .getCutOffTimestampPerRef()
-            .getOrDefault(
-                GCUtil.deserializeReference(reference).getName(),
-                gcParams.getDefaultCutOffTimestamp());
   }
 
   private long getTotalCommitsInDefaultReference(NessieApiV1 api) {

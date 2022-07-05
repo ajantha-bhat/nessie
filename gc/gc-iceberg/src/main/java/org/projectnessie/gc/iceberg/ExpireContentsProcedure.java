@@ -151,6 +151,8 @@ public class ExpireContentsProcedure extends BaseGCProcedure {
         row ->
             outputRows.add(
                 GCProcedureUtil.internalRow(
+                    // "content_id", "deleted_files_type", "deleted_files_count",
+                    // "deleted_files_list"
                     row.getString(0), row.getString(1), row.getInt(3), row.getList(2))));
 
     if (!dryRun && !outputRows.isEmpty()) {
@@ -275,10 +277,7 @@ public class ExpireContentsProcedure extends BaseGCProcedure {
             try {
               fileIO.deleteFile(file);
             } catch (UncheckedIOException e) {
-              LOG.warn(
-                  "Failed to read the data/delete file. Might have deleted in the previous GC run."
-                      + " Hence, Ignoring the error.",
-                  e);
+              LOG.warn("Failed to delete the file.", e);
             }
           });
       return value;

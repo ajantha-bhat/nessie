@@ -120,7 +120,7 @@ public class ITJerseyRestExpireProcedureInMemory extends AbstractRestGC {
   }
 
   @Test
-  public void testDryRun() {
+  public void testDryRun() throws NessieNotFoundException {
     // ------  Time ---- | --- branch1 --------------|
     //         t0        | Create branch             |
     //         t1        | TABLE_ONE : ID_1 (expired)|
@@ -173,7 +173,7 @@ public class ITJerseyRestExpireProcedureInMemory extends AbstractRestGC {
   }
 
   @Test
-  public void testMultiRefMultipleSharedTables() {
+  public void testMultiRefMultipleSharedTables() throws NessieNotFoundException {
     // ------  Time ---- | --- branch1 -----| ---- branch2 -----| --- branch3 ------------- |
     //         t0        | create branch    |                   |                           |
     //         t1        | TABLE_ONE : ID_1 | {TABLE_ONE : ID_1}| {TABLE_ONE : ID_1}        |
@@ -241,7 +241,7 @@ public class ITJerseyRestExpireProcedureInMemory extends AbstractRestGC {
   }
 
   @Test
-  public void testSharedTablesWithTag() {
+  public void testSharedTablesWithTag() throws NessieNotFoundException {
     // -- Time --| --- branch1 ------------   | ---- tag1    ----- | ------ tag2    ------------  |
     //   t0     | create branch              |                    |                              |
     //   t1     | TABLE_ONE : ID_1           | {TABLE_ONE : ID_1} | {TABLE_ONE : ID_1}           |
@@ -296,7 +296,7 @@ public class ITJerseyRestExpireProcedureInMemory extends AbstractRestGC {
   }
 
   @Test
-  public void testCheckPoint() {
+  public void testCheckPoint() throws NessieNotFoundException {
     // ------  Time ---- | --- branch1 --------------|
     //         t0        | Create branch             |
     //         t1        | TABLE_ONE : ID_1 (expired)|
@@ -357,7 +357,7 @@ public class ITJerseyRestExpireProcedureInMemory extends AbstractRestGC {
 
   @ParameterizedTest
   @ValueSource(strings = {"rewrite_data_files", "rewrite_manifests"})
-  public void testRewrite(String type) {
+  public void testRewrite(String type) throws NessieNotFoundException {
     // ------  Time ---- | --- branch1 -----------------|
     //         t0        | Create branch                |
     //         t1        | TABLE_ONE : ID_1 (expired)   | // creates one new manifest
@@ -424,7 +424,7 @@ public class ITJerseyRestExpireProcedureInMemory extends AbstractRestGC {
   }
 
   @Test
-  public void testSharedTableMultipleRef() {
+  public void testSharedTableMultipleRef() throws NessieNotFoundException {
     // -- Time --| --- branch1 ------------   | ---- branch2 --------------  |
     //   t0     | create branch              |                              |
     //   t1     | TABLE_ONE : ID_1 (expired) | {TABLE_ONE : ID_1} (expired) |

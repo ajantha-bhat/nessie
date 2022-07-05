@@ -35,7 +35,7 @@ public class TestContentBloomFilter {
 
   @Test
   void testBasic() {
-    BloomFilter<Content> filter = BloomFilter.create(new ContentFunnel(), 10, 0.03d);
+    BloomFilter<Content> filter = BloomFilter.create(ContentFunnel.INSTANCE, 10, 0.03d);
     List<Content> contents = generateContents(0, ICEBERG_TABLE);
     contents.addAll(generateContents(0, ICEBERG_VIEW));
     contents.forEach(filter::put);
@@ -53,13 +53,13 @@ public class TestContentBloomFilter {
 
   @Test
   void testMerge() {
-    BloomFilter<Content> filter1 = BloomFilter.create(new ContentFunnel(), 10, 0.03d);
+    BloomFilter<Content> filter1 = BloomFilter.create(ContentFunnel.INSTANCE, 10, 0.03d);
     List<Content> contents1 = generateContents(0, ICEBERG_TABLE);
     contents1.addAll(generateContents(0, ICEBERG_VIEW));
     contents1.forEach(filter1::put);
 
     // create another filter with overlapping contents
-    BloomFilter<Content> filter2 = BloomFilter.create(new ContentFunnel(), 10, 0.03d);
+    BloomFilter<Content> filter2 = BloomFilter.create(ContentFunnel.INSTANCE, 10, 0.03d);
     List<Content> contents2 = generateContents(5, ICEBERG_TABLE);
     contents2.addAll(generateContents(0, ICEBERG_VIEW));
     contents2.forEach(filter2::put);
@@ -74,7 +74,7 @@ public class TestContentBloomFilter {
 
   @Test
   void testDeltaLakeContent() {
-    BloomFilter<Content> filter = BloomFilter.create(new ContentFunnel(), 10, 0.03d);
+    BloomFilter<Content> filter = BloomFilter.create(ContentFunnel.INSTANCE, 10, 0.03d);
     List<Content> contents = generateContents(0, DELTA_LAKE_TABLE);
 
     assertThatThrownBy(() -> contents.forEach(filter::put))

@@ -26,7 +26,8 @@ import org.projectnessie.model.IcebergTable;
 import org.projectnessie.model.IcebergView;
 
 /** Bloom filter funnel implementation to hold {@link Content} info. */
-public class ContentFunnel implements Funnel<Content> {
+enum ContentFunnel implements Funnel<Content> {
+  INSTANCE;
 
   @Override
   public void funnel(Content content, PrimitiveSink into) {
@@ -48,15 +49,5 @@ public class ContentFunnel implements Funnel<Content> {
       default:
         throw new RuntimeException("Unsupported type " + content.getType());
     }
-  }
-
-  @Override
-  public int hashCode() {
-    return 1;
-  }
-
-  @Override
-  public boolean equals(Object obj) {
-    return obj instanceof ContentFunnel;
   }
 }
