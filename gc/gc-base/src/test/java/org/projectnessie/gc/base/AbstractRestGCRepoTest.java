@@ -69,7 +69,7 @@ public abstract class AbstractRestGCRepoTest extends AbstractRestGCTest {
         assertThat(identifiedResultsRepo.getLatestCompletedRunID().get())
             .isEqualTo(runIds.get(runIds.size() - 1));
       } finally {
-        sparkSession.sql(String.format("DROP TABLE %s", catalogAndIdentifierWithReference));
+        sparkSession.sql(String.format("DROP TABLE %s", identifier));
       }
     }
   }

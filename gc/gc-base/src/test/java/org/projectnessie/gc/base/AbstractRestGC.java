@@ -143,9 +143,7 @@ public abstract class AbstractRestGC extends AbstractRest {
         .set("spark.sql.catalog.nessie.warehouse", tempDir.toURI().toString())
         .set("spark.sql.catalog.nessie.catalog-impl", "org.apache.iceberg.nessie.NessieCatalog")
         .set("spark.sql.catalog.nessie", "org.apache.iceberg.spark.SparkCatalog")
-        .set(
-            "spark.sql.extensions",
-            "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions,org.projectnessie.spark.extensions.NessieSparkSessionExtensions");
+        .set("spark.sql.extensions", "org.projectnessie.spark.extensions.NessieSparkSessionExtensions");
 
     SparkSession spark =
         SparkSession.builder()

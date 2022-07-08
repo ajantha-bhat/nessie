@@ -15,9 +15,7 @@
  */
 package org.projectnessie.gc.base;
 
-import static org.apache.iceberg.types.Types.NestedField.optional;
-import static org.apache.iceberg.types.Types.NestedField.required;
-
+import com.google.common.collect.ImmutableMap;
 import com.google.errorprone.annotations.FormatMethod;
 import com.google.errorprone.annotations.FormatString;
 import java.sql.Timestamp;
@@ -26,16 +24,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
-import org.apache.iceberg.Schema;
-import org.apache.iceberg.catalog.TableIdentifier;
-import org.apache.iceberg.exceptions.AlreadyExistsException;
-import org.apache.iceberg.spark.SparkSchemaUtil;
-import org.apache.iceberg.types.Types;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SparkSession;
+import org.apache.spark.sql.catalyst.analysis.NoSuchNamespaceException;
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
+import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException;
+import org.apache.spark.sql.connector.catalog.CatalogPlugin;
+import org.apache.spark.sql.connector.catalog.Identifier;
+import org.apache.spark.sql.connector.catalog.Table;
+import org.apache.spark.sql.connector.catalog.TableCatalog;
+import org.apache.spark.sql.connector.expressions.Transform;
+import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 import org.projectnessie.model.Content;
 import org.projectnessie.model.ImmutableTableReference;
@@ -66,34 +68,21 @@ public final class IdentifiedResultsRepo {
     CHECKPOINT_MARKER
   }
 
-  private static final Schema icebergSchema =
-      new Schema(
-          Types.StructType.of(
-                  // GC run start timestamp.
-                  required(1, COL_GC_RUN_START, Types.TimestampType.withZone()),
-                  // GC run-ID.
-                  required(2, COL_GC_RUN_ID, Types.StringType.get()),
-                  // row type can be CONTENT_OUTPUT, CHECKPOINT or CHECKPOINT_MARKER.
-                  required(3, COL_ROW_TYPE, Types.StringType.get()),
-                  // Nessie Content.id
-                  optional(4, COL_CONTENT_ID, Types.StringType.get()),
-                  // Nessie Content.type
-                  optional(5, COL_CONTENT_TYPE, Types.StringType.get()),
-                  // Iceberg Table/View Content's snapshot/version id.
-                  optional(6, COL_SNAPSHOT_ID, Types.LongType.get()),
-                  // Name of the reference via which the contentID was collected
-                  optional(7, COL_REFERENCE_NAME, Types.StringType.get()),
-                  // Hash of the reference via which the contentID was collected
-                  optional(8, COL_HASH_ON_REFERENCE, Types.StringType.get()),
-                  // commit hash which is containing this content
-                  optional(9, COL_COMMIT_HASH, Types.StringType.get()),
-                  // metadata location of this content
-                  optional(10, COL_METADATA_LOCATION, Types.StringType.get()),
-                  // to indicate whether this content is expired or live
-                  optional(11, COL_IS_EXPIRED, Types.BooleanType.get()))
-              .fields());
-
-  private static final StructType schema = SparkSchemaUtil.convert(icebergSchema);
+  private static final StructType schema =
+      DataTypes.createStructType(
+          new StructField[] {
+            DataTypes.createStructField(COL_GC_RUN_START, DataTypes.TimestampType, false),
+            DataTypes.createStructField(COL_GC_RUN_ID, DataTypes.StringType, false),
+            DataTypes.createStructField(COL_ROW_TYPE, DataTypes.StringType, false),
+            DataTypes.createStructField(COL_CONTENT_ID, DataTypes.StringType, true),
+            DataTypes.createStructField(COL_CONTENT_TYPE, DataTypes.StringType, true),
+            DataTypes.createStructField(COL_SNAPSHOT_ID, DataTypes.LongType, true),
+            DataTypes.createStructField(COL_REFERENCE_NAME, DataTypes.StringType, true),
+            DataTypes.createStructField(COL_HASH_ON_REFERENCE, DataTypes.StringType, true),
+            DataTypes.createStructField(COL_COMMIT_HASH, DataTypes.StringType, true),
+            DataTypes.createStructField(COL_METADATA_LOCATION, DataTypes.StringType, true),
+            DataTypes.createStructField(COL_IS_EXPIRED, DataTypes.BooleanType, true)
+          });
 
   private final SparkSession sparkSession;
   private final String catalogAndTableWithRefName;
@@ -101,9 +90,9 @@ public final class IdentifiedResultsRepo {
   public IdentifiedResultsRepo(
       SparkSession sparkSession, String catalog, String gcBranchName, String gcTableIdentifier) {
     this.sparkSession = sparkSession;
-    this.catalogAndTableWithRefName = withRefName(catalog, gcTableIdentifier, gcBranchName);
-    createTableIfAbsent(
-        sparkSession, catalog, TableIdentifier.parse(gcTableIdentifier), gcBranchName);
+    //TODO:
+    this.catalogAndTableWithRefName = gcTableIdentifier;
+    createTableIfAbsent(sparkSession, gcTableIdentifier);
   }
 
   public static StructType getSchema() {
@@ -175,13 +164,21 @@ public final class IdentifiedResultsRepo {
   }
 
   void writeToOutputTable(Dataset<Row> rowDataset) {
-    try {
-      // write content rows to the output table
-      rowDataset.writeTo(catalogAndTableWithRefName).append();
-    } catch (NoSuchTableException e) {
-      throw new RuntimeException(
-          "Problem while writing output rows to the table: " + catalogAndTableWithRefName, e);
-    }
+    // unreferencedAssets
+    //   .repartition(unreferencedAssets.col("tableName"))
+    //   .sortWithinPartitions()
+    //   .write()
+    //   .format("iceberg")
+    //   .mode("append")
+    //   .save(table.toString());
+    rowDataset.write().format("parquet").mode("append").save(catalogAndTableWithRefName);
+    // try {
+    //   // write content rows to the output table
+    //   // rowDataset.writeTo(catalogAndTableWithRefName).append();
+    // } catch (NoSuchTableException e) {
+    //   throw new RuntimeException(
+    //       "Problem while writing output rows to the table: " + catalogAndTableWithRefName, e);
+    // }
   }
 
   static Row createContentRow(
@@ -269,30 +266,6 @@ public final class IdentifiedResultsRepo {
         .collect(Collectors.toMap(row -> row.getString(0), row -> row.getString(1)));
   }
 
-  static void createTableIfAbsent(
-      SparkSession sparkSession,
-      String catalogName,
-      TableIdentifier tableIdentifier,
-      String gcBranchName) {
-    try {
-      GCUtil.loadNessieCatalog(sparkSession, catalogName, gcBranchName)
-          .createTable(tableIdentifier, IdentifiedResultsRepo.icebergSchema);
-    } catch (AlreadyExistsException ex) {
-      // Table can exist from previous GC run, no need to throw exception.
-    }
-  }
-
-  private static String withRefName(String catalog, String identifier, String refName) {
-    int tableNameIndex = identifier.lastIndexOf(".");
-    String namespace = identifier.substring(0, tableNameIndex);
-    String tableName = identifier.substring(tableNameIndex + 1);
-    return catalog
-        + "."
-        + namespace
-        + "."
-        + ImmutableTableReference.builder().name(tableName).reference(refName).build();
-  }
-
   private Timestamp getGcStartTime(String runId) {
     return sql(
             "SELECT %s FROM %s WHERE %s = '%s' AND %s = '%s' LIMIT 1",
@@ -330,5 +303,34 @@ public final class IdentifiedResultsRepo {
     String sql = String.format(sqlStatement, args);
     LOGGER.debug("Executing the sql -> {}", sql);
     return sparkSession.sql(sql);
+  }
+
+  private void createTableIfAbsent(SparkSession session, String tableIdentifier) {
+    int tableNameIndex = tableIdentifier.lastIndexOf(".");
+    String namespace = tableIdentifier.substring(0, tableNameIndex);
+    sql("CREATE DATABASE IF NOT EXISTS %s", namespace);
+
+    CatalogPlugin catalog = session.sessionState().catalogManager().currentCatalog();
+
+    String[] namespaces = {namespace};
+    Identifier ident = Identifier.of(namespaces, tableIdentifier.substring(tableNameIndex + 1));
+
+    try {
+      Table table = ((TableCatalog) catalog).loadTable(ident);
+      if (!table.schema().equals(schema)) {
+        throw new RuntimeException(
+          String.format("Cannot create table %s. Table with different schema already exists", ident));
+      }
+      // table already exists.
+    } catch (NoSuchTableException e) {
+      // table doesn't exist. So, create a table.
+      try {
+        ((TableCatalog) catalog).createTable(ident, schema, new Transform[0], ImmutableMap.of());
+      } catch (TableAlreadyExistsException ex) {
+        // can't happen as already verified before creating table.
+      } catch (NoSuchNamespaceException ex) {
+        // can't happen as manually creating the namespace before creating table.
+      }
+    }
   }
 }

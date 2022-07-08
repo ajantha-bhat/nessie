@@ -26,7 +26,7 @@ extra["maven.name"] = "Nessie - GC - Base Implementation"
 
 val scalaVersion = dependencyVersion("versionScala2_12")
 
-val sparkVersion = dependencyVersion("versionSpark31")
+val sparkVersion = dependencyVersion("versionSpark32")
 
 val clientNessieVersion = dependencyVersion("versionClientNessie")
 
@@ -47,12 +47,6 @@ dependencies {
   implementation("com.google.code.findbugs:jsr305")
 
   compileOnly("org.apache.spark:spark-sql_2.12") { forSpark(sparkVersion) }
-  compileOnly("org.apache.iceberg:iceberg-api")
-  compileOnly("org.apache.iceberg:iceberg-core")
-  compileOnly("org.apache.iceberg:iceberg-nessie") { exclude("org.projectnessie") }
-  compileOnly("org.apache.iceberg:iceberg-spark3")
-  compileOnly("org.apache.iceberg:iceberg-parquet")
-  compileOnly("org.apache.parquet:parquet-column")
 
   testImplementation(platform(rootProject))
 
@@ -71,10 +65,6 @@ dependencies {
 
   testImplementation(project(":nessie-spark-extensions-base")) { testJarCapability() }
   testImplementation(project(":nessie-spark-extensions"))
-  testImplementation("org.apache.iceberg:iceberg-nessie")
-  testImplementation("org.apache.iceberg:iceberg-spark3")
-  testImplementation("org.apache.iceberg:iceberg-spark3-extensions")
-  testImplementation("org.apache.iceberg:iceberg-hive-metastore")
 
   testImplementation("org.assertj:assertj-core")
   testImplementation(platform("org.junit:junit-bom"))

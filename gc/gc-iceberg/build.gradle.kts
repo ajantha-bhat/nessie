@@ -25,7 +25,7 @@ extra["maven.name"] = "Nessie - GC - Iceberg Implementation"
 
 val scalaVersion = dependencyVersion("versionScala2_12")
 
-val sparkVersion = dependencyVersion("versionSpark31")
+val sparkVersion = dependencyVersion("versionSpark32")
 
 val clientNessieVersion = dependencyVersion("versionClientNessie")
 
