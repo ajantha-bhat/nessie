@@ -192,6 +192,7 @@ dependencies {
         api(
           "org.apache.iceberg:iceberg-spark-extensions-${sparkVersion}_$scalaVersion:$versionIceberg"
         )
+        api("org.apache.iceberg:iceberg-spark-runtime-${sparkVersion}_$scalaVersion:$versionIceberg")
       }
     }
     api("org.apache.maven:maven-resolver-provider:$versionMaven")

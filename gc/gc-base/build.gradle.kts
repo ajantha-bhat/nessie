@@ -36,7 +36,7 @@ dependencies {
   compileOnly("org.immutables:value-annotations")
   annotationProcessor("org.immutables:value-processor")
 
-  compileOnly(nessieProject("nessie-client"))
+  implementation(nessieClientForIceberg())
   compileOnly("org.eclipse.microprofile.openapi:microprofile-openapi-api")
   compileOnly("jakarta.validation:jakarta.validation-api")
   implementation("com.fasterxml.jackson.core:jackson-annotations")
@@ -45,20 +45,21 @@ dependencies {
   compileOnly("org.apache.spark:spark-sql_${sparkScala.scalaMajorVersion}") {
     forSpark(sparkScala.sparkVersion)
   }
-  compileOnly("org.apache.iceberg:iceberg-api")
-  compileOnly("org.apache.iceberg:iceberg-core")
-  compileOnly("org.apache.iceberg:iceberg-nessie") { exclude("org.projectnessie") }
   compileOnly(
-    "org.apache.iceberg:iceberg-spark-${sparkScala.sparkMajorVersion}_${sparkScala.scalaMajorVersion}"
+    "org.apache.iceberg:iceberg-spark-runtime-${sparkScala.sparkMajorVersion}_${sparkScala.scalaMajorVersion}"
   )
-  compileOnly("org.apache.iceberg:iceberg-parquet")
-  compileOnly("org.apache.parquet:parquet-column")
 
   testImplementation(platform(nessieRootProject()))
 
   testCompileOnly("org.eclipse.microprofile.openapi:microprofile-openapi-api")
-  testImplementation(nessieProject("nessie-jaxrs-testextension"))
-  testImplementation(nessieProject("nessie-jaxrs-tests"))
+  testImplementation(nessieProject("nessie-jaxrs-testextension")) {
+    exclude("org.projectnessie", "nessie-client")
+    exclude("org.projectnessie", "nessie-model")
+  }
+  testImplementation(nessieProject("nessie-jaxrs-tests")) {
+    exclude("org.projectnessie", "nessie-client")
+    exclude("org.projectnessie", "nessie-model")
+  }
   testImplementation("org.apache.spark:spark-sql_${sparkScala.scalaMajorVersion}") {
     forSpark(sparkScala.sparkVersion)
     exclude("com.sun.jersey", "jersey-servlet")
@@ -69,6 +70,9 @@ dependencies {
   testCompileOnly(platform("com.fasterxml.jackson:jackson-bom"))
   testCompileOnly("com.fasterxml.jackson.core:jackson-annotations")
 
+  testImplementation(
+    "org.apache.iceberg:iceberg-spark-runtime-${sparkScala.sparkMajorVersion}_${sparkScala.scalaMajorVersion}"
+  )
   testImplementation(project(":nessie-spark-extensions-base_${sparkScala.scalaMajorVersion}")) {
     testJarCapability()
   }
@@ -77,15 +81,6 @@ dependencies {
       ":nessie-spark-extensions-${sparkScala.sparkMajorVersion}_${sparkScala.scalaMajorVersion}"
     )
   )
-  testImplementation("org.apache.iceberg:iceberg-nessie")
-  testImplementation(
-    "org.apache.iceberg:iceberg-spark-${sparkScala.sparkMajorVersion}_${sparkScala.scalaMajorVersion}"
-  )
-  testImplementation(
-    "org.apache.iceberg:iceberg-spark-extensions-${sparkScala.sparkMajorVersion}_${sparkScala.scalaMajorVersion}"
-  )
-  testImplementation("org.apache.iceberg:iceberg-hive-metastore")
-
   testImplementation("org.assertj:assertj-core")
   testImplementation(platform("org.junit:junit-bom"))
   testImplementation("org.junit.jupiter:junit-jupiter-api")

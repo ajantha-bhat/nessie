@@ -62,9 +62,9 @@ public abstract class AbstractRestGC extends AbstractRest {
         .refName(branch.getName())
         .hashOnRef(branch.getHash())
         .fetch(FetchOption.ALL)
-        .stream()
-        .limit(numCommits)
-        .collect(Collectors.toList());
+        .maxRecords(numCommits)
+        .get()
+        .getLogEntries();
   }
 
   void fillExpectedContents(Branch branch, int numCommits, List<Row> expected)
