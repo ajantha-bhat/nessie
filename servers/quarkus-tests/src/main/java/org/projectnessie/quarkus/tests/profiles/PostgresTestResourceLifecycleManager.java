@@ -22,6 +22,7 @@ import io.quarkus.test.common.DevServicesContext;
 import io.quarkus.test.common.QuarkusTestResourceLifecycleManager;
 import java.util.Map;
 import java.util.Optional;
+import org.projectnessie.versioned.persist.tx.postgres.PostgresTestUtil;
 import org.testcontainers.containers.JdbcDatabaseContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 
@@ -38,9 +39,9 @@ public class PostgresTestResourceLifecycleManager
 
   @Override
   public Map<String, String> start() {
-    String version = System.getProperty("it.nessie.container.postgres.tag", "14");
-
-    container = new PostgreSQLContainer<>("postgres:" + version).withLogConsumer(outputFrame -> {});
+    container =
+        new PostgreSQLContainer<>("postgres:" + PostgresTestUtil.getPostgresContainerVersion())
+            .withLogConsumer(outputFrame -> {});
     containerNetworkId.ifPresent(container::withNetworkMode);
     try {
       // Only start the Docker container (local Dynamo-compatible). The DynamoDatabaseClient will

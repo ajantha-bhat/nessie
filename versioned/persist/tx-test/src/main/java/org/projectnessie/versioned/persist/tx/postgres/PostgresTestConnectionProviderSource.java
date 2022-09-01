@@ -34,7 +34,6 @@ public class PostgresTestConnectionProviderSource extends ContainerTestConnectio
 
   @Override
   protected JdbcDatabaseContainer<?> createContainer() {
-    String version = System.getProperty("it.nessie.container.postgres.tag", "14");
-    return new PostgreSQLContainer<>("postgres:" + version);
+    return new PostgreSQLContainer<>("postgres:" + PostgresTestUtil.getPostgresContainerVersion());
   }
 }
