@@ -23,6 +23,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import java.time.Instant;
@@ -36,6 +39,7 @@ import java.util.function.IntFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -46,8 +50,10 @@ import org.projectnessie.error.NessieNotFoundException;
 import org.projectnessie.model.Branch;
 import org.projectnessie.model.CommitMeta;
 import org.projectnessie.model.ContentKey;
+import org.projectnessie.model.GenericMetadata;
 import org.projectnessie.model.IcebergTable;
 import org.projectnessie.model.IcebergView;
+import org.projectnessie.model.ImmutableIcebergTable;
 import org.projectnessie.model.LogResponse;
 import org.projectnessie.model.LogResponse.LogEntry;
 import org.projectnessie.model.Operation.Delete;
@@ -554,6 +560,40 @@ public abstract class AbstractRestCommitLog extends AbstractRestAssign {
     assertThat(logEntries.size()).isEqualTo(1);
     assertThat(logEntries.get(0).getCommitMeta().getMessage()).contains("Commit #1");
     assertThat(logEntries.get(0).getOperations()).isNull();
+  }
+
+  @Test
+  public void testHugeMetadata() throws BaseNessieClientServerException {
+    Branch branch = createBranch("hugeMetadata");
+
+
+    String jsonString = // Note: it passes for 9 * 1024 * 1024
+      "{\"k1\":\" " + RandomStringUtils.randomAlphabetic(10 * 1024 * 1024) + "\"}";
+    JsonNode newMetadata;
+    try {
+      newMetadata = new ObjectMapper().readTree(jsonString);
+    } catch (JsonProcessingException e) {
+      throw new RuntimeException(e);
+    }
+
+    ImmutableIcebergTable table = ImmutableIcebergTable.builder().snapshotId(42)
+      .schemaId(0)
+      .specId(0)
+      .sortOrderId(0)
+      .metadataLocation("metadata")
+      .metadata(GenericMetadata.of("org.apache:iceberg:V1", newMetadata))
+      .build();
+
+      getApi()
+        .commitMultipleOperations()
+        .branch(branch)
+        .commitMeta(CommitMeta.fromMessage("some awkward message"))
+        .operation(
+          Put.of(
+            ContentKey.of("hello", "world", "BaseTable"),
+            table))
+        .commit();
+
   }
 
   void verifyPaging(
