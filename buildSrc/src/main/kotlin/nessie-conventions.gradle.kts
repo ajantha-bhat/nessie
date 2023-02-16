@@ -197,6 +197,7 @@ fun Project.configureJava() {
     if (System.getProperty("withMavenLocal").toBoolean()) {
       mavenLocal()
     }
+    maven("https://repository.apache.org/snapshots")
   }
 
   tasks.withType<JavaCompile>().configureEach {
